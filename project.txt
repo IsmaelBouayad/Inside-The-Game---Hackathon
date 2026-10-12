@@ -1,0 +1,79 @@
+# BASE PROMPT: Inside the Game Developer Hackathon (Microsoft & Premier League)
+
+You are an expert AI software architect and sports analytics engineer. Your task is to help me design, architect, and build a winning project for the **Inside the Game: Developer Hackathon**, a global online competition organized by **Microsoft** in partnership with the **Premier League**. 
+
+Use the extensive documentation below as your definitive source of truth for the event constraints, technical environment, and project expectations.
+
+---
+
+## 1. COMPETE CONTEXT & OVERVIEW
+* **Organizer:** Microsoft in collaboration with the Premier League.
+* **Format:** 100% Online, Global, Free entry.
+* **Objective:** Leverage Artificial Intelligence and realistic synthetic football data to transform how fans, broadcasters, and coaches experience and understand the game. The goal is to move past raw statistics into "explainable intelligence" and immersive narratives.
+* **Prize Pool:** Up to $50,000 in total prizes.
+
+### Timeline & Deadlines (Strict Constraints)
+* **Hackathon Start:** October 6, 2026
+* **Registration Deadline:** October 20, 2026
+* **Submission Window Closes:** October 27, 2026
+
+---
+
+## 2. PARTICIPATION MODALITIES & TEAM STRUCTURE
+* **Team Size:** Solo developers (1 person) or multi-person teams are fully permitted.
+* **AI-Assisted Solo Development:** Solo participants are explicitly encouraged to leverage advanced AI coding agents, copilots, and developer tools to manage end-to-end full-stack architectures (frontend, backend, data pipeline, and prompt engineering) effectively.
+
+---
+
+## 3. THE PROBLEM BRIEF & DATA EXPECTATIONS
+Participants must build an AI-powered solution capable of processing hyper-realistic, rich synthetic soccer dataset variants provided specifically for this event. 
+* **The Core Shift:** Do NOT build standard stat-dashboards (e.g., simple pass maps or generic possession counters).
+* **The Goal:** Build features delivering **Explainable Game Intelligence**—translating data streams into contextual insights, tactical explanations, emotional narratives, or highly automated digital content assets.
+
+---
+
+## 4. THE FOUR TRACKS / CHALLENGE THEMES
+Your solution must align directly with one or more of these official categories:
+
+### Track 1: Real-Time Match Narratives
+* **Focus:** Automatic generation of highly dynamic text, audio, or visual commentary feeds during a live match sequence.
+* **Example Ideas:** An AI that creates targeted match commentary adjusting its tone, bias, and technical depth based on the fan’s selected club allegiance, age, or preferred language.
+
+### Track 2: Explainable Match Intelligence
+* **Focus:** Deconstructing complex team tactics, breaking points, and shift-of-play mechanics for streaming networks, live TV broadcasts, or coaching staffs.
+* **Example Ideas:** Algorithms tracking the breaking point of defensive blocks, predictive spatial models, or an automated "Momentum Shift Index" evaluating tactical patterns.
+
+### Track 3: Automated Recaps and Smart Summaries
+* **Focus:** Algorithmic extraction and packaging of match highlights that emphasize high-level narrative and structural match shifts over generic goal clips.
+* **Example Ideas:** Automated post-game tactical recaps, personalized multimedia newsletters, or summary video scripts identifying the invisible turning points of a fixture.
+
+### Track 4: Immersive Fan Experiences
+* **Focus:** Creating secondary-screen interfaces, web applications, or interactive chatbots that keep global supporters plugged deeply into live data ecosystems.
+* **Example Ideas:** Interactive companion apps letting users query real-time data or predict a manager's next tactical substitution using ongoing live patterns.
+
+---
+
+## 5. TECHNICAL ENVIRONMENT & INTEGRATION REQUIREMENTS
+The final submission must leverage the **Microsoft Cloud & AI ecosystem**. Solutions must prominently integrate one or more of the following foundational layers:
+* **Data Foundation:** Microsoft Fabric (Unified data lakehouses, semantic pipelines, Real-Time Analytics).
+* **AI Layer:** Azure AI Services (Azure OpenAI Studio, GPT-4o variants, Phi models, Azure AI Search, or multi-modal models).
+* **Infrastructure & Tooling:** GitHub Ecosystem (GitHub Copilot, GitHub Actions), Microsoft Foundry tools, and Azure App Service / Container environments.
+
+---
+
+## 6. PROJECT EVALUATION CRITERIA
+Submissions will be formally judged based on four distinct axes (referencing official rules found on Microsoft's GitHub):
+
+1. **Technical Execution (Quality & Integration):** Robustness, elegance, and completeness of the system design. High-fidelity integration of Azure AI infrastructure and proper handling of the data payload.
+2. **Creativity & Innovation:** Novelty of the idea. Does it break free from legacy football metrics to showcase something genuinely fresh and unseen?
+3. **Value & Business Impact:** True real-world usefulness for the Premier League, its worldwide broadcast partners, or its massive international fanbase.
+4. **Functional MVP (Viability):** The application must be demonstrably operational via a codebase, an accessible UI, and a recorded video showcase demonstrating the system executing pipelines on the event data.
+
+---
+
+## 7. ASSIGNMENT FOR YOU (THE AI)
+Now that you know all the parameters of the hackathon, I want you to act as my co-developer. Please respond by confirming you have absorbed this brief, and provide:
+1. **Three (3) highly innovative project architectures** that cleanly fit the tracks while maintaining absolute compatibility with Microsoft Fabric & Azure AI.
+2. For each concept, outline the **Data Pipeline**, the **AI Architecture**, and the **User Interface concept**.
+3. Choose the single most competitive concept for a solo developer to win and give a step-by-step roadmap to build it before October 27, 2026.
+
