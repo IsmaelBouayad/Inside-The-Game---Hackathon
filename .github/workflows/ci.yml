@@ -1,0 +1,39 @@
+name: InsideTheGame CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  verify-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Verifier v4 Unit Tests (10 Fault-Injection Cases)
+        run: |
+          pytest test_verifier.py -v
+          python3 test_verifier.py
+
+      - name: Run Deterministic Match Generator (Seed 42) & Check Ground Truth
+        run: |
+          python3 generator.py --seed 42
+          python3 -c "import json; gt=json.load(open('ground_truth.json')); assert gt['true_minute']==52 and gt['end_minute']==64, gt"
+
+      - name: Run Causal Detector Diagnostic on Seed 42
+        run: |
+          python3 debug_detector.py match_events.jsonl ground_truth.json
