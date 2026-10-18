@@ -3,6 +3,7 @@ import json
 import asyncio
 import re
 import time
+from datetime import datetime, timedelta
 from openai import AsyncOpenAI
 from agent_framework import Agent
 from agent_framework.openai import OpenAIChatCompletionClient
@@ -11,6 +12,7 @@ from typing import List
 
 CACHE_FILE = "demo_cache.json"
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+MATCH_KICKOFF = datetime(2026, 10, 27, 15, 0, 0)
 
 
 class ColorCommentaryPayload(BaseModel):
@@ -20,9 +22,14 @@ class ColorCommentaryPayload(BaseModel):
 
 
 class MatchRecapPayload(BaseModel):
-    headline: str
-    tactical_summary: str
+    tactical_color: str
     key_episode_ids: List[str] = Field(min_length=1)
+
+
+def format_match_timestamp(minute: int) -> str:
+    """Produces a strictly valid ISO-8601 timestamp (e.g. minute 62 -> 2026-10-27T16:02:00Z)."""
+    dt = MATCH_KICKOFF + timedelta(minutes=int(minute))
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def load_cache():
@@ -56,9 +63,9 @@ async def warmup_ollama(model_name: str = None):
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=2
         )
-        print(f"🔥 [Warmup] Modèle '{model}' prêt en RAM ({round(time.monotonic() - t0, 2)}s)")
+        print(f"🔥 [Warmup] Model '{model}' ready in RAM ({round(time.monotonic() - t0, 2)}s)")
     except Exception as e:
-        print(f"⚠️ [Warmup] Note: '{model}' démarrera à la première requête ({e})")
+        print(f"⚠️ [Warmup] Note: '{model}' will initialize on first request ({e})")
 
 
 def extract_json(text: str) -> str:
@@ -72,9 +79,9 @@ def extract_json(text: str) -> str:
 
 def build_factual_core(alarm: dict, language: str = "English") -> str:
     """
-    Généré à 100% par Python : Vérité terrain mathématique avec distinction exacte
-    entre 'recovered' (relance réussie >75%) et 'exhausted' (le pressing retombe <=1 action),
-    et gestion grammaticale stricte du singulier/pluriel.
+    100% Python-generated mathematical ground truth with explicit distinction
+    between 'recovered' (victim pass acc >75%) and 'exhausted' (pressing actions <=1),
+    and strict singular/plural grammar.
     """
     minute = alarm["minute"]
     team = alarm["team"]
@@ -86,7 +93,6 @@ def build_factual_core(alarm: dict, language: str = "English") -> str:
     pass_acc = stats.get("pass_acc")
     acc_pct = int(round(pass_acc * 100)) if pass_acc is not None else None
 
-    # Déduction automatique de exit_reason si absent (rétrocompatibilité tests)
     if status == "EXITED" and not exit_reason:
         exit_reason = "recovered" if (acc_pct is not None and acc_pct > 75) else "exhausted"
 
@@ -136,12 +142,11 @@ def build_factual_core(alarm: dict, language: str = "English") -> str:
 
 def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_event_ids: set) -> list:
     """
-    Vérificateur v5.1 :
-    1. IDs réels obligatoires appartenant à l'épisode (pas de placeholder 'EVT-XXXX').
-    2. Interdiction absolue de chiffres et mots-nombres dans le texte du LLM.
-    3. Interdiction des incidents non survenus (cartons, blessures, pénaltys) ET des micro-actions
-       spatiales non tracées dans la télémétrie (winger, right-back, clever run, header, corner).
-    4. Interdiction d'inverser les rôles dans analyst_color ou fan_view.
+    Verifier v5.1:
+    1. Real cited event IDs from the episode window required (rejects 'EVT-XXXX').
+    2. Strictly forbids digits and number words in LLM color text.
+    3. Forbids unrecorded match incidents (cards, injuries, penalties) and untracked player micro-actions.
+    4. Prevents role inversion between pressing team and victim.
     """
     errors = []
 
@@ -155,7 +160,6 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
     combined = f"{payload.analyst_color} {payload.fan_view}".strip()
     combined_lower = combined.lower()
 
-    # 2. Aucun chiffre dans le texte du LLM
     text_no_ids = re.sub(r"EVT-[A-Za-z0-9_-]+", "", combined)
     if re.search(r"\d", text_no_ids):
         found = re.findall(r"\d+", text_no_ids)
@@ -165,20 +169,19 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
     if re.search(number_words, combined_lower):
         errors.append("Number words are forbidden in LLM color text. Python supplies all metrics.")
 
-    # 3. Interdiction des incidents ET des micro-détails tactiques inventés (winger, clever run, right-back...)
     hallucination_triggers = [
         r"red card", r"yellow card", r"carton rouge", r"carton jaune",
         r"penalty", r"pénalty", r"injury", r"injured", r"blessé", r"blessure",
         r"sent off", r"expulsé", r"handball", r"offside", r"hors-jeu",
-        r"corner", r"free kick", r"coup franc", r"header",
-        r"winger", r"ailier", r"right-back", r"right back", r"left-back", r"left back",
-        r"full-back", r"fullback", r"clever run", r"through ball", r"cross"
+        r"corner", r"free kick", r"coup franc", r"\bheader\b",
+        r"\bwinger\b", r"\bailier\b", r"right-back", r"right back", r"left-back", r"left back",
+        r"full-back", r"fullback", r"clever run", r"through ball", r"\bcross\b"
     ]
     for h in hallucination_triggers:
-        if re.search(h if h.startswith(r"") else rf"\b{re.escape(h)}\b", combined_lower):
+        pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
+        if re.search(pattern, combined_lower):
             errors.append(f"Hallucinated match incident or unverified micro-action detected: '{h}'.")
 
-    # 4. Anti-inversion des rôles
     victim = alarm["victim"].lower()
     team = alarm["team"].lower()
     status = alarm.get("status", "ENTERED")
@@ -193,10 +196,6 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
 
 
 def build_multiaudience_views(alarm: dict, analyst_color_en: str = "", fan_en: str = "") -> dict:
-    """
-    Étape 4 (Track 1 & Track 4) : À partir du même fait vérifié par Python, génère en simultané
-    les vues Analyste & Supporter en Anglais ET en Français + variantes Club Bias.
-    """
     fact_en = build_factual_core(alarm, "English")
     fact_fr = build_factual_core(alarm, "French")
     status = alarm.get("status", "ENTERED")
@@ -219,8 +218,8 @@ def build_multiaudience_views(alarm: dict, analyst_color_en: str = "", fan_en: s
             default_color_en = "The pressing intensity drops off, restoring normal build-up phases."
             color_fr = "L'intensité du pressing adverse baisse, permettant de temporiser."
             fan_fr = f"Le pressing de {team} s'essouffle, {victim} reprend le contrôle du ballon ! ⚖️"
-        club_meteor = f"💙 Meteor City breathes again and resets the tempo!"
-        club_nova = f"💛 Nova FC stabilizes possession and looks forward!"
+        club_meteor = "💙 Meteor City breathes again and resets the tempo!"
+        club_nova = "💛 Nova FC stabilizes possession and looks forward!"
 
     use_color_en = analyst_color_en if analyst_color_en else default_color_en
     use_fan_en = fan_en if fan_en else (f"{team} turns up the heat! 🔥" if status == "ENTERED" else f"{victim} regains control of the tempo! ⚡")
@@ -254,7 +253,7 @@ def generate_fallback_overlay(alarm: dict, episode_key: str, language: str = "En
         "language_used": language,
         "target_persona": persona,
         "exit_reason": alarm.get("exit_reason"),
-        "timestamp": f"2026-10-27T15:{alarm['minute']:02d}:00Z",
+        "timestamp": alarm.get("timestamp") or format_match_timestamp(alarm["minute"]),
         "match_minute": alarm["minute"],
         "episode_id": episode_key,
         "stats_snapshot": alarm.get("stats", {}),
@@ -270,10 +269,13 @@ def generate_goal_overlay(event: dict, score: dict, match_id: str, language: str
 
     en_analyst = f"GOAL at minute {minute}! {player} ({scorer_team}) scores. Score is now Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
     en_fan = f"GOOOAAAL! Clinical finish by {player} for {scorer_team}! ⚽🔥"
-    fr_analyst = f"BUT à la {minute}e minute ! {player} ({scorer_team}) ouvre la marque ou creuse l'écart. Score : Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
+    fr_analyst = f"BUT à la {minute}e minute ! {player} ({scorer_team}) marque. Score : Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
     fr_fan = f"BUUUT ! Finition décisive de {player} pour {scorer_team} ! ⚽🔥"
 
     is_fr = language.lower() in ("french", "français")
+    raw_ts = event.get("timestamp", "")
+    valid_ts = raw_ts + "Z" if (raw_ts and not raw_ts.endswith("Z")) else (raw_ts or format_match_timestamp(minute))
+
     return {
         "analyst_view": fr_analyst if is_fr else en_analyst,
         "fan_view": fr_fan if is_fr else en_fan,
@@ -281,14 +283,14 @@ def generate_goal_overlay(event: dict, score: dict, match_id: str, language: str
             "en": {"analyst_view": en_analyst, "fan_view": en_fan},
             "fr": {"analyst_view": fr_analyst, "fan_view": fr_fan},
             "club_voices": {
-                "Meteor City": f"💙 YES! {scorer_team} changes the scoreboard ({score['Meteor City']}-{score['Nova FC']})!",
+                "Meteor City": f"💙 Goal update ({score['Meteor City']}-{score['Nova FC']}): {scorer_team} strikes at minute {minute}!",
                 "Nova FC": f"💛 Score update at minute {minute}: Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
             }
         },
         "cited_event_ids": [event["event_id"]],
         "language_used": language,
         "target_persona": "General Fan",
-        "timestamp": event["timestamp"],
+        "timestamp": valid_ts,
         "match_minute": minute,
         "episode_id": episode_key,
         "stats_snapshot": {"score": dict(score)},
@@ -322,7 +324,7 @@ async def generate_episode_narrative(
     client = get_clients(model)
     agent = Agent(
         client=client,
-        instructions=f"""You are a live football broadcast co-commentator.
+        instructions=f"""You are a live football broadcast co-commentator (ExplainerAgent).
 Language: {language}. Persona for fan_view: {persona}.
 FACTS ALREADY FIXED BY PYTHON:
 "{factual_core}"
@@ -361,12 +363,12 @@ Reply with ONLY valid JSON:
             errors = verify_color_commentary(payload_obj, alarm, valid_ids_set)
 
             if not errors:
-                print(f"   ✅ [Vérificateur v5.1] Style validé en {duration}s")
+                print(f"   ✅ [Verifier v5.1] Style validated in {duration}s")
                 break
             else:
                 err_msg = " | ".join(errors)
                 rejection_history.append(err_msg)
-                print(f"   ⚠️ [Rejet Vérificateur v5.1]: {err_msg}")
+                print(f"   ⚠️ [Verifier v5.1 Rejected]: {err_msg}")
                 prompt = (
                     f"REJECTED: {err_msg}. "
                     f"Write general team-level commentary ONLY. No digits, no player positions (no winger/fullback/run). "
@@ -375,7 +377,7 @@ Reply with ONLY valid JSON:
         except Exception as e:
             err_msg = f"Format Error: {type(e).__name__}"
             rejection_history.append(err_msg)
-            print(f"   ⚠️ [Erreur format]: {err_msg}")
+            print(f"   ⚠️ [Format Error]: {err_msg}")
             prompt = f"Invalid JSON. Return only raw JSON matching the schema. Allowed IDs: {json.dumps(trigger_ids)}."
         attempts += 1
 
@@ -401,7 +403,7 @@ Reply with ONLY valid JSON:
         "target_persona": persona,
         "exit_reason": alarm.get("exit_reason"),
         "model_used": model,
-        "timestamp": f"2026-10-27T15:{alarm['minute']:02d}:00Z",
+        "timestamp": alarm.get("timestamp") or format_match_timestamp(alarm["minute"]),
         "match_minute": alarm["minute"],
         "episode_id": episode_key,
         "stats_snapshot": alarm.get("stats", {}),
@@ -419,38 +421,143 @@ Reply with ONLY valid JSON:
     return final_json
 
 
+def build_recap_factual_core(verified_overlays: list, score: dict, peak_swing: dict = None, language: str = "English") -> tuple[str, str, list]:
+    """
+    Dynamically derives the true match winner/draw and true pressing intervals
+    from actual match score and verified episodes (zero hardcoded minutes or teams).
+    """
+    m_score = score.get("Meteor City", 0)
+    n_score = score.get("Nova FC", 0)
+    is_fr = language.lower() in ("french", "français")
+
+    # 1. Dynamic outcome wording (Win / Loss / Draw)
+    if m_score > n_score:
+        outcome_en = f"Meteor City secures a {m_score}-{n_score} victory over Nova FC."
+        outcome_fr = f"Meteor City s'impose {m_score}-{n_score} face à Nova FC."
+    elif n_score > m_score:
+        outcome_en = f"Nova FC claims a {n_score}-{m_score} victory against Meteor City."
+        outcome_fr = f"Nova FC remporte le match {n_score}-{m_score} contre Meteor City."
+    else:
+        outcome_en = f"Meteor City and Nova FC share the spoils in a {m_score}-{n_score} draw."
+        outcome_fr = f"Meteor City et Nova FC se quittent sur un match nul {m_score}-{n_score}."
+
+    headline = (
+        f"Score final : Meteor City {m_score} - {n_score} Nova FC"
+        if is_fr else f"Full Time: Meteor City {m_score} - {n_score} Nova FC"
+    )
+
+    # 2. Dynamic pressing episodes extraction
+    tactical_eps = [o for o in verified_overlays if "ENTERED" in o.get("episode_id", "") or "EXITED" in o.get("episode_id", "")]
+    episode_ids = [o.get("episode_id", "ep") for o in verified_overlays]
+
+    if tactical_eps:
+        minutes = sorted(list({o.get("match_minute", 0) for o in tactical_eps}))
+        if len(minutes) >= 2:
+            press_en = f"Verified high-press tactical shifts occurred between minutes {minutes[0]} and {minutes[-1]}."
+            press_fr = f"Des phases de pressing haut vérifiées ont rythmé la rencontre entre les minutes {minutes[0]} et {minutes[-1]}."
+        else:
+            press_en = f"A verified high-press tactical shift was recorded at minute {minutes[0]}."
+            press_fr = f"Un changement de régime de pressing haut a été vérifié à la {minutes[0]}e minute."
+    else:
+        press_en = "No sustained high-press tactical regime shifts were triggered during this match."
+        press_fr = "Aucun changement de régime de pressing haut prolongé n'a été déclenché durant ce match."
+
+    # 3. Dynamic Turning Point
+    tp_str_en, tp_str_fr = "", ""
+    if peak_swing and peak_swing.get("minute", 0) > 0:
+        tp_min = peak_swing["minute"]
+        tp_team = peak_swing["team"]
+        tp_val = peak_swing.get("value", 0.0)
+        tp_str_en = f" The peak Momentum Index swing ({tp_val:+.1f} for {tp_team}) occurred at minute {tp_min}."
+        tp_str_fr = f" Le pic de Momentum ({tp_val:+.1f} pour {tp_team}) a été mesuré à la {tp_min}e minute."
+
+    factual_summary = f"{outcome_fr} {press_fr}{tp_str_fr}" if is_fr else f"{outcome_en} {press_en}{tp_str_en}"
+    return headline, factual_summary, episode_ids
+
+
 async def generate_match_recap(
     match_id: str,
     verified_overlays: list,
     score: dict,
     peak_swing: dict = None,
     language: str = "English",
-    model_name: str = None
+    model_name: str = None,
+    use_llm: bool = True
 ) -> dict:
-    """RecapAgent (Track 3) : 100% déterministe sur les faits + Turning Point du Momentum Index."""
-    episode_ids = [o.get("episode_id", "ep") for o in verified_overlays]
-    tp_min = peak_swing.get("minute", 57) if peak_swing else 57
-    tp_team = peak_swing.get("team", "Meteor City") if peak_swing else "Meteor City"
-    tp_val = peak_swing.get("value", 65.0) if peak_swing else 65.0
+    """
+    Second Collaborative Agent (RecapAgent — Track 3):
+    Receives structured handoff of verified_overlays from ExplainerAgent, builds dynamic
+    factual core in Python, and asks RecapAgent for a verified 1-sentence tactical synthesis.
+    """
+    model = model_name or DEFAULT_MODEL
+    headline, factual_summary, episode_ids = build_recap_factual_core(verified_overlays, score, peak_swing, language)
 
-    if language.lower() in ("french", "français"):
-        headline = f"Score final : Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC"
-        summary = (
-            f"Meteor City s'impose {score['Meteor City']}-{score['Nova FC']}. "
-            f"Le tournant tactique (Momentum Index : {tp_val:+.1f}) a été initié par {tp_team} autour de la {tp_min}e minute, "
-            f"avec une séquence de pressing haut vérifiée entre les minutes 57 et 62."
+    default_closing = (
+        "La discipline collective aura dicté le tempo jusqu'au coup de sifflet final."
+        if language.lower() in ("french", "français")
+        else "Collective spatial discipline ultimately dictated the tempo of the fixture."
+    )
+
+    if not use_llm or not episode_ids:
+        return {
+            "headline": headline,
+            "tactical_summary": f"{factual_summary} {default_closing}".strip(),
+            "turning_point": peak_swing or {},
+            "key_episode_ids": episode_ids,
+            "agent_handoff_count": len(verified_overlays),
+            "recap_verified": True
+        }
+
+    client = get_clients(model)
+    valid_ep_set = set(episode_ids)
+    recap_agent = Agent(
+        client=client,
+        instructions=f"""You are the Post-Match Tactical Editor (RecapAgent).
+You receive the verified episode handoff from the live ExplainerAgent:
+FIXED MATCH FACTS: "{factual_summary}"
+VERIFIED EPISODE IDS: {json.dumps(episode_ids)}
+
+YOUR TASK:
+Write 1 concluding sentence ('tactical_color') synthesizing the overall tactical flow in {language}.
+STRICT RULES:
+1. DO NOT write any numbers, digits, or number words.
+2. DO NOT invent cards, injuries, penalties, corners, or player positions.
+3. Cite 1 or 2 real IDs from VERIFIED EPISODE IDS in 'key_episode_ids'.
+
+Reply with ONLY valid JSON:
+{{
+  "tactical_color": "...",
+  "key_episode_ids": {json.dumps(episode_ids[:2])}
+}}"""
+    )
+
+    try:
+        res = await asyncio.wait_for(recap_agent.run("Synthesize post-match tactical color from ExplainerAgent handoff."), timeout=15.0)
+        parsed = MatchRecapPayload.model_validate_json(extract_json(res.text))
+        dummy_alarm = {"team": "Meteor City", "victim": "Nova FC", "status": "ENTERED", "minute": 90}
+        color_check = ColorCommentaryPayload(
+            analyst_color=parsed.tactical_color,
+            fan_view="ok",
+            cited_event_ids=[ parsed.key_episode_ids[0] ] if parsed.key_episode_ids else ["INVALID"]
         )
-    else:
-        headline = f"Full Time: Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC"
-        summary = (
-            f"Meteor City secures a {score['Meteor City']}-{score['Nova FC']} victory. "
-            f"The decisive tactical turning point (Momentum Index peak: {tp_val:+.1f} for {tp_team} at minute {tp_min}) "
-            f"aligned with the verified high-press regime between minutes 57 and 62."
-        )
+        errs = verify_color_commentary(color_check, dummy_alarm, valid_ep_set)
+        if not errs:
+            return {
+                "headline": headline,
+                "tactical_summary": f"{factual_summary} {parsed.tactical_color}".strip(),
+                "turning_point": peak_swing or {},
+                "key_episode_ids": parsed.key_episode_ids,
+                "agent_handoff_count": len(verified_overlays),
+                "recap_verified": True
+            }
+    except Exception:
+        pass
 
     return {
         "headline": headline,
-        "tactical_summary": summary,
-        "turning_point": peak_swing or {"minute": tp_min, "team": tp_team, "value": tp_val},
-        "key_episode_ids": episode_ids
+        "tactical_summary": f"{factual_summary} {default_closing}".strip(),
+        "turning_point": peak_swing or {},
+        "key_episode_ids": episode_ids,
+        "agent_handoff_count": len(verified_overlays),
+        "recap_verified": False
     }

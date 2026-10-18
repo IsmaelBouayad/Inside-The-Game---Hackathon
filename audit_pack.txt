@@ -1,0 +1,117 @@
+== git ==
+6a55476 Merge branch 'main' of https://github.com/IsmaelBouayad/Inside-The-Game---Hackathon
+bf1872d fix(verifier): strict word boundaries for spatial tokens and update empirical benchmarks
+85dfaca Add CI badge to README
+75f6d01 Initialise git
+64a7ba3 Initial commit: secure repository foundation
+?? audit_pack.txt
+== fichiers versionnés ==
+.Rhistory
+.github/workflows/ci.yml
+.gitignore
+README.md
+app.py
+benchmark_detector.py
+calibrate_detector.py
+check_llm.py
+contracts.py
+debug_detector.py
+detector.py
+diagnostic.py
+engine.py
+engine_metrics.json
+fabric_sink.py
+generator.py
+ground_truth.json
+harness.py
+llm_benchmark.py
+match_clock.json
+match_recap.json
+pipeline.py
+project.txt
+requirements.txt
+streamer.py
+test_maf.py
+test_maf_ollama.py
+test_verifier.py
+== secrets dans l'historique (nombre seulement) ==
+0
+== environnement ==
+Python 3.10.12
+agent-framework==1.21.0
+agent-framework-a2a==1.0.0b261002
+agent-framework-ag-ui==1.5.1
+agent-framework-anthropic==1.0.0b261008
+agent-framework-azure-ai-search==1.0.0b261002
+agent-framework-azure-contentunderstanding==1.0.0b261008
+agent-framework-azure-cosmos==1.0.0b261002
+agent-framework-azurefunctions==1.0.0b260922
+agent-framework-bedrock==1.0.0b261008
+agent-framework-chatkit==1.0.0b261002
+agent-framework-claude==1.0.0b261002
+agent-framework-copilotstudio==1.0.0b261002
+agent-framework-core==1.21.0
+agent-framework-declarative==1.2.1
+agent-framework-devui==1.0.0b261008
+agent-framework-durabletask==1.0.0b260922
+agent-framework-foundry==1.14.1
+agent-framework-foundry-hosting==1.0.0b261008
+agent-framework-foundry-local==1.0.0b260730
+agent-framework-gemini==1.0.0b261008
+agent-framework-hyperlight==1.0.0b261008
+agent-framework-mem0==1.0.0b261002
+agent-framework-mistral==1.0.0b260918
+agent-framework-monty==1.0.0b261008
+agent-framework-ollama==1.0.0b261008
+agent-framework-openai==1.16.0
+agent-framework-orchestrations==1.3.1
+agent-framework-purview==1.0.0b261008
+agent-framework-redis==1.0.0b261002
+agent-framework-tools==1.0.0b261008
+azure-ai-agentserver-core==2.2.0
+azure-ai-agentserver-invocations==1.2.0
+azure-ai-agentserver-responses==2.3.0
+azure-ai-contentunderstanding==1.2.0b3
+azure-ai-inference==1.0.0b9
+azure-ai-projects==2.7.0
+azure-core==1.39.0
+azure-core-tracing-opentelemetry==1.0.0b13
+azure-cosmos==4.17.1
+azure-eventhub==5.15.1
+azure-functions==1.25.0
+azure-functions-durable==1.7.0
+azure-identity==1.25.3
+azure-monitor-opentelemetry-exporter==1.0.0b58
+azure-search-documents==12.0.0
+azure-storage-blob==12.28.0
+durabletask.azuremanaged==1.11.0
+openai==3.29.0
+openai-agents==0.22.2
+openai-chatkit==1.6.5
+opentelemetry-instrumentation-openai-agents-v2==0.1.0
+opentelemetry-instrumentation-openai-v2==2.3b0
+opentelemetry-resource-detector-azure==0.3.0
+pydantic==2.12.5
+pydantic-monty==0.0.23
+pydantic-monty-client==0.0.23
+pydantic-monty-runtime==0.0.23
+pydantic-settings==2.13.1
+pydantic_core==2.41.5
+streamlit==1.65.0
+NAME                ID              SIZE      MODIFIED     
+phi4-mini:latest    78fad5d182a7    2.5 GB    27 hours ago    
+llama3.2:latest     a80c4f17acd5    2.0 GB    8 days ago      
+qwen2.5-coder:7b    dae161e27b0e    4.7 GB    6 months ago    
+               total       utilisé      libre     partagé tamp/cache   disponible
+Mem:            15Gi       4,4Gi       3,0Gi       966Mi       7,9Gi       9,6Gi
+== tests ==
+/usr/bin/python3: No module named pytest
+== détecteur ==
+🔬 Exécution du benchmark détecteur sur 200 matchs de test (Seeds 1001..1200)...
+
+--- RÉSULTATS DU BENCHMARK DÉTECTEUR v4 (200 MATCHS) ---
+Total Matchs : 200 (Pressing: 151, Contrôles: 49)
+Recall (fenêtre +12 min) : 72.2% (109/151)
+Retard médian de détection : 5.0 minutes
+Fausses entrées / match : 0.01 (Contrôle: 1/49, Mauvaise équipe: 3, Anticipées: 1)
+Sorties précises (±8 min de la vraie fin) : 109/123

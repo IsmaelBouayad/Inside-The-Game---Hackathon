@@ -115,3 +115,40 @@ if __name__ == "__main__":
         t()
         print(f"✅ PASS: {t.__name__}")
     print(f"\n🎯 {len(tests)}/{len(tests)} Verifier v5.1 stress tests passed flawlessly.")
+
+from datetime import datetime
+from pipeline import format_match_timestamp, generate_fallback_overlay, build_recap_factual_core
+
+
+def test_15_valid_iso_timestamp_above_minute_59():
+    ts = format_match_timestamp(62)
+    assert ts == "2026-10-27T16:02:00Z"
+    parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    assert parsed.hour == 16 and parsed.minute == 2
+    fb = generate_fallback_overlay(SAMPLE_ALARM_EXITED_EXHAUSTED, "m_42_min62_EXITED")
+    datetime.fromisoformat(fb["timestamp"].replace("Z", "+00:00"))
+
+
+def test_16_dynamic_recap_nova_win_and_draw_and_no_press():
+    # Nova FC wins, custom minutes 48 and 54
+    eps = [
+        {"episode_id": "m_1_min48_ENTERED", "match_minute": 48},
+        {"episode_id": "m_1_min54_EXITED", "match_minute": 54},
+    ]
+    h1, s1, _ = build_recap_factual_core(eps, {"Meteor City": 1, "Nova FC": 3}, language="English")
+    assert "Nova FC claims a 3-1 victory" in s1
+    assert "minutes 48 and 54" in s1
+    assert "57" not in s1
+
+    # Draw with no pressing episodes
+    h2, s2, _ = build_recap_factual_core([], {"Meteor City": 1, "Nova FC": 1}, language="English")
+    assert "1-1 draw" in s2
+    assert "No sustained high-press" in s2
+
+
+if __name__ == "__main__":
+    test_15_valid_iso_timestamp_above_minute_59()
+    print("✅ PASS: test_15_valid_iso_timestamp_above_minute_59")
+    test_16_dynamic_recap_nova_win_and_draw_and_no_press()
+    print("✅ PASS: test_16_dynamic_recap_nova_win_and_draw_and_no_press")
+    print("\n🎯 All 16/16 Verifier v5.1 + ISO Timestamp + Dynamic Recap tests passed!")
