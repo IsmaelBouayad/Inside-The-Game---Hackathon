@@ -1,5 +1,6 @@
-# Inside The Game — Edge AI Tactical Broadcast Pipeline
 
+# Inside The Game — Edge AI Tactical Broadcast Pipeline
+![InsideTheGame CI](https://github.com/IsmaelBouayad/Inside-The-Game---Hackathon/actions/workflows/ci.yml/badge.svg) 
 **Real-Time Tactical Momentum Shift Detection, Multi-Tier Broadcast Overlays, and Programmatic LLM Verification**
 
 ---
