@@ -1,5 +1,5 @@
 {
-  "events": 856,
+  "events": 1743,
   "alarms": 2,
   "goals_narrated_tier0": 2,
   "dropped_jobs": 0,
@@ -9,6 +9,6 @@
   "errors": 0,
   "superseded_finals": 0,
   "fabric_delivery_mode": "fabric_eventstream_live",
-  "llm_latency_sec_median": 8.57,
-  "llm_latency_sec_max": 9.04
+  "llm_latency_sec_median": 14.23,
+  "llm_latency_sec_max": 18.83
 }

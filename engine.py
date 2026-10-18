@@ -32,18 +32,25 @@ METRICS_FILE = "engine_metrics.json"
 RECAP_FILE = "match_recap.json"
 QUEUE_SIZE = 2
 
+pending_fabric_tasks: set = set()
+
+
 def append_to_ui(data: dict) -> None:
     with open(UI_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-def update_clock(minute: int, score: dict, state: str, current_speed: float) -> None:
+
+def update_clock(minute: int, score: dict, state: str, current_speed: float, momentum_history: list, peak_swing: dict) -> None:
     with open(CLOCK_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "minute": minute,
             "score": score,
             "tactical_state": state,
-            "current_speed": current_speed
+            "current_speed": current_speed,
+            "momentum_history": momentum_history[-30:],
+            "peak_swing": peak_swing
         }, f)
+
 
 class Metrics:
     def __init__(self):
@@ -73,14 +80,18 @@ class Metrics:
             json.dump(data, f, indent=2)
         return data
 
-def fire_and_forget_fabric(fabric: FabricTelemetrySink, record_type: str, payload: dict):
-    """Envoi Fabric asynchrone non-bloquant avec timeout de sécurité."""
+
+def schedule_fabric_send(fabric: FabricTelemetrySink, record_type: str, payload: dict):
+    """Envoi Fabric non-bloquant suivi dans pending_fabric_tasks pour garantir la livraison finale."""
     async def _send():
         try:
-            await asyncio.wait_for(fabric.ingest_record(record_type, payload), timeout=2.0)
+            await asyncio.wait_for(fabric.ingest_record(record_type, payload), timeout=5.0)
         except Exception:
             pass
-    asyncio.create_task(_send())
+    task = asyncio.create_task(_send())
+    pending_fabric_tasks.add(task)
+    task.add_done_callback(pending_fabric_tasks.discard)
+
 
 def template_overlay(alarm: dict, key: str, seq: int, status: str, reason: str = "", latency=None) -> dict:
     o = generate_fallback_overlay(alarm, key, language=LANGUAGE, persona=PERSONA)
@@ -91,6 +102,7 @@ def template_overlay(alarm: dict, key: str, seq: int, status: str, reason: str =
     if latency is not None:
         o["llm_latency_sec"] = latency
     return o
+
 
 async def llm_worker(
     queue: asyncio.Queue,
@@ -130,7 +142,7 @@ async def llm_worker(
                 metrics.rejected_fallback += 1
 
             append_to_ui(out)
-            fire_and_forget_fabric(fabric, "OVERLAY_FINAL", out)
+            schedule_fabric_send(fabric, "OVERLAY_FINAL", out)
             print(f"   ✅ [Worker] {out['render_status']} en {latency}s ({key})")
 
         except asyncio.TimeoutError:
@@ -140,7 +152,7 @@ async def llm_worker(
                                   reason=f"Timeout {llm_timeout}s", latency=latency)
             fb["superseded"] = seq < state_tracker["latest_seq"]
             append_to_ui(fb)
-            fire_and_forget_fabric(fabric, "OVERLAY_TIMEOUT", fb)
+            schedule_fabric_send(fabric, "OVERLAY_TIMEOUT", fb)
             print(f"   ⏱️ [Worker] TIMEOUT après {llm_timeout}s ({key}) - Gabarit conservé")
         except Exception as e:
             metrics.errors += 1
@@ -150,6 +162,7 @@ async def llm_worker(
         finally:
             state_tracker["worker_busy"] = False
             queue.task_done()
+
 
 async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, start_minute: int = 0, llm=None,
                        llm_timeout: float = LLM_TIMEOUT):
@@ -168,23 +181,26 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
         events = [json.loads(line) for line in f]
 
     match_id = events[0]["event_id"].split("-")[1]
+    detector = OnlineShiftDetector()
+
+    # Pré-alimentation causale du détecteur si start_minute > 0 pour garder l'historique exact du Momentum
+    score = {"Meteor City": 0, "Nova FC": 0}
+    for e in events:
+        if e["minute"] < start_minute:
+            detector.process_event(e)
+            if e.get("event_type") == "Shot" and e.get("outcome") == "Goal":
+                score[e["team"]] += 1
+
     filtered_events = [e for e in events if e["minute"] >= start_minute]
     print(f"⚽ Match {match_id}: {len(filtered_events)} événements (min {start_minute}..89), vitesse base x{speed}, ralenti tactique={'ON' if DYNAMIC_PACING else 'OFF'}")
 
     metrics = Metrics()
-    detector = OnlineShiftDetector()
     fabric = FabricTelemetrySink()
     metrics.fabric_mode = "fabric_eventstream_live" if fabric.live_enabled else "local_jsonl_fallback"
     queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_SIZE)
 
     state_tracker = {"latest_seq": 0, "current_minute": start_minute, "worker_busy": False}
     verified_overlays = []
-    
-    # Calcul du score initial si départ après la minute 0
-    score = {"Meteor City": 0, "Nova FC": 0}
-    for e in events:
-        if e["minute"] < start_minute and e.get("event_type") == "Shot" and e.get("outcome") == "Goal":
-            score[e["team"]] += 1
 
     worker = asyncio.create_task(
         llm_worker(queue, match_id, llm, metrics, llm_timeout, fabric, state_tracker, verified_overlays)
@@ -206,7 +222,6 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
             recent.append(event)
             state_tracker["current_minute"] = event["minute"]
 
-            # Tier-0 : Buts en direct
             if event.get("event_type") == "Shot" and event.get("outcome") == "Goal":
                 score[event["team"]] += 1
                 metrics.goals += 1
@@ -215,25 +230,29 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
                 goal_ov["episode_seq"] = state_tracker["latest_seq"]
                 append_to_ui(goal_ov)
                 verified_overlays.append(goal_ov)
-                fire_and_forget_fabric(fabric, "GOAL_TIER0", goal_ov)
+                schedule_fabric_send(fabric, "GOAL_TIER0", goal_ov)
                 print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {event['team']} ({score})")
+
+            alarm = detector.process_event(event)
 
             if event["minute"] != last_clock_min:
                 last_clock_min = event["minute"]
-                update_clock(event["minute"], score, detector.state, active_speed)
+                update_clock(
+                    event["minute"], score, detector.state, active_speed,
+                    detector.momentum_history, detector.peak_swing
+                )
 
-            # Détecteur causal
-            alarm = detector.process_event(event)
             if alarm:
                 metrics.alarms += 1
                 state_tracker["latest_seq"] += 1
                 seq = state_tracker["latest_seq"]
                 key = f"{match_id}_min{alarm['minute']}_{alarm['status']}"
-                print(f"\n🚨 [DÉTECTEUR] {alarm['status']} minute {alarm['minute']} ({alarm['team']} vs {alarm['victim']})")
+                reason_tag = f" [reason={alarm.get('exit_reason')}]" if alarm.get("exit_reason") else ""
+                print(f"\n🚨 [DÉTECTEUR] {alarm['status']}{reason_tag} minute {alarm['minute']} ({alarm['team']} vs {alarm['victim']})")
 
                 draft = template_overlay(alarm, key, seq, "DRAFT (Live)")
                 append_to_ui(draft)
-                fire_and_forget_fabric(fabric, "ALARM", alarm)
+                schedule_fabric_send(fabric, "ALARM", alarm)
 
                 job = (seq, alarm, list(recent))
                 if queue.full():
@@ -250,18 +269,28 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
         except asyncio.TimeoutError:
             print("   ⚠️ Abandon de l'attente des jobs résiduels.")
 
-        print("📝 [RecapAgent] Génération du résumé tactique de fin de match...")
-        recap = await generate_match_recap(match_id, verified_overlays, score, language=LANGUAGE)
+        print("📝 [RecapAgent] Génération du résumé tactique et Turning Point de fin de match...")
+        recap = await generate_match_recap(
+            match_id, verified_overlays, score,
+            peak_swing=detector.peak_swing, language=LANGUAGE
+        )
         with open(RECAP_FILE, "w", encoding="utf-8") as f:
             json.dump(recap, f, indent=2, ensure_ascii=False)
-        fire_and_forget_fabric(fabric, "POST_MATCH_RECAP", recap)
+
+        final_metrics = metrics.dump()
+
+        # Envoi synchrone final garanti vers Fabric pour POST_MATCH_RECAP et MATCH_METRICS
+        await fabric.ingest_record("POST_MATCH_RECAP", recap)
+        await fabric.ingest_record("MATCH_METRICS", final_metrics)
+        if pending_fabric_tasks:
+            await asyncio.gather(*pending_fabric_tasks, return_exceptions=True)
 
     finally:
         worker.cancel()
         await fabric.close()
 
-    final_metrics = metrics.dump()
     print("🎬 Moteur terminé. Métriques :", json.dumps(final_metrics, indent=2))
+
 
 if __name__ == "__main__":
     import logging
