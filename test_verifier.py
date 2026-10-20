@@ -1,3 +1,5 @@
+import json
+import os
 from pipeline import ColorCommentaryPayload, verify_color_commentary, build_factual_core
 
 SAMPLE_ALARM_ENTERED = {
@@ -94,7 +96,31 @@ def test_14_accept_valid_entered_french():
     p = ColorCommentaryPayload(analyst_color="Le bloc haut étouffe complètement les relances courtes.", fan_view="Quelle intensité dans les duels ! 🔥", cited_event_ids=["EVT-m_42-1154"])
     assert verify_color_commentary(p, SAMPLE_ALARM_ENTERED, VALID_IDS_ENTERED) == []
 
+
+def test_17_end_to_end_draft_to_final_ui_upgrade(tmp_path=None):
+    import tempfile
+    import app
+    with tempfile.NamedTemporaryFile("w+", suffix=".jsonl", delete=False, encoding="utf-8") as tf:
+        temp_ui = tf.name
+        draft = {"episode_id": "m_42_min57_ENTERED", "episode_seq": 1, "render_status": "DRAFT (Live)", "analyst_view": "Draft"}
+        final = {"episode_id": "m_42_min57_ENTERED", "episode_seq": 1, "render_status": "FINAL (AI Verified)", "analyst_view": "Verified"}
+        tf.write(json.dumps(draft) + "\n")
+        tf.write(json.dumps(final) + "\n")
+    old_ui = app.UI_FILE
+    try:
+        app.UI_FILE = temp_ui
+        episodes = app.load_episodes()
+        assert len(episodes) == 1
+        assert episodes[0]["episode_id"] == "m_42_min57_ENTERED"
+        assert episodes[0]["render_status"] == "FINAL (AI Verified)"
+    finally:
+        app.UI_FILE = old_ui
+        if os.path.exists(temp_ui):
+            os.remove(temp_ui)
+
 if __name__ == "__main__":
+    test_17_end_to_end_draft_to_final_ui_upgrade()
+    print("✅ PASS: test_17_end_to_end_draft_to_final_ui_upgrade")
     tests = [
         test_01_reject_invented_id,
         test_02_reject_placeholder_id,
@@ -146,9 +172,33 @@ def test_16_dynamic_recap_nova_win_and_draw_and_no_press():
     assert "No sustained high-press" in s2
 
 
+
+def test_17_end_to_end_draft_to_final_ui_upgrade(tmp_path=None):
+    import tempfile
+    import app
+    with tempfile.NamedTemporaryFile("w+", suffix=".jsonl", delete=False, encoding="utf-8") as tf:
+        temp_ui = tf.name
+        draft = {"episode_id": "m_42_min57_ENTERED", "episode_seq": 1, "render_status": "DRAFT (Live)", "analyst_view": "Draft"}
+        final = {"episode_id": "m_42_min57_ENTERED", "episode_seq": 1, "render_status": "FINAL (AI Verified)", "analyst_view": "Verified"}
+        tf.write(json.dumps(draft) + "\n")
+        tf.write(json.dumps(final) + "\n")
+    old_ui = app.UI_FILE
+    try:
+        app.UI_FILE = temp_ui
+        episodes = app.load_episodes()
+        assert len(episodes) == 1
+        assert episodes[0]["episode_id"] == "m_42_min57_ENTERED"
+        assert episodes[0]["render_status"] == "FINAL (AI Verified)"
+    finally:
+        app.UI_FILE = old_ui
+        if os.path.exists(temp_ui):
+            os.remove(temp_ui)
+
 if __name__ == "__main__":
+    test_17_end_to_end_draft_to_final_ui_upgrade()
+    print("✅ PASS: test_17_end_to_end_draft_to_final_ui_upgrade")
     test_15_valid_iso_timestamp_above_minute_59()
     print("✅ PASS: test_15_valid_iso_timestamp_above_minute_59")
     test_16_dynamic_recap_nova_win_and_draw_and_no_press()
     print("✅ PASS: test_16_dynamic_recap_nova_win_and_draw_and_no_press")
-    print("\n🎯 All 16/16 Verifier v5.1 + ISO Timestamp + Dynamic Recap tests passed!")
+    print("\n🎯 All 17/17 Verifier v5.1 + ISO Timestamp + Dynamic Recap tests passed!")

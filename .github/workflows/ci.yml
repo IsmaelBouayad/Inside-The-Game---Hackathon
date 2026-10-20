@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Verifier v4 Unit Tests (10 Fault-Injection Cases)
+      - name: Run Verifier v5.1 Stress Run Verifier v4 Unit Tests (10 Fault-Injection Cases) Regression Suite (17 Tests)
         run: |
           pytest test_verifier.py -v
           python3 test_verifier.py
