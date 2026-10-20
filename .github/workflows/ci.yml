@@ -8,7 +8,7 @@ on:
 
 jobs:
   verify-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Verifier v5.1 Stress Run Verifier v5.1 Stress Run Verifier v4 Unit Tests (10 Fault-Injection Cases) Regression Suite (17 Tests) Regression Suite (17 Tests)
+      - name: Run Verifier v5.2 Stress & End-to-End Regression Suite (18 Tests)
         run: |
           pytest test_verifier.py -v
           python3 test_verifier.py

@@ -140,6 +140,7 @@ async def llm_worker(
                 out = template_overlay(alarm, key, seq, "FINAL (Template - LLM Output Rejected)", latency=latency)
                 out["superseded"] = is_superseded
                 metrics.rejected_fallback += 1
+                verified_overlays.append(out)
 
             append_to_ui(out)
             schedule_fabric_send(fabric, "OVERLAY_FINAL", out)

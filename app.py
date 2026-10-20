@@ -54,6 +54,18 @@ def log_director_decision(episode_id: str, decision: str):
     }
     with open(AUDIT_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
+    eps = load_episodes()
+    for ep in eps:
+        if ep.get("episode_id") == episode_id:
+            updated = dict(ep)
+            updated["director_decision"] = decision
+            if decision == "HELD_BY_DIRECTOR":
+                updated["render_status"] = "🛑 HELD BY DIRECTOR (Withdrawn from Air)"
+            else:
+                updated["render_status"] = "📡 ON-AIR (Director Approved)"
+            with open(UI_FILE, "a", encoding="utf-8") as uf:
+                uf.write(json.dumps(updated, ensure_ascii=False) + "\n")
+            break
     try:
         sink = FabricTelemetrySink()
         asyncio.run(sink.ingest_record("DIRECTOR_AUDIT", record))

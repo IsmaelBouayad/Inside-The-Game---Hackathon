@@ -41,7 +41,7 @@ match_events.jsonl ──► engine.py (Async Simulated Clock + Dynamic Tactical
                           │               └──► asyncio.Queue(maxsize=2, latest-wins)
                           │                           │
                           │                           ▼
-                          │                    pipeline.py (ExplainerAgent + Verifier v5.1)
+                          │                    pipeline.py (ExplainerAgent + Verifier v5.2)
                           │                           │
                           │                           ├──► Tier-2 FINAL ──► broadcast_ui.jsonl (In-place upgrade)
                           │                           └──► Verified Episode Handoff
@@ -56,7 +56,7 @@ match_events.jsonl ──► engine.py (Async Simulated Clock + Dynamic Tactical
 
 ---
 
-## 3. Programmatic Verifier v5.1 (`pipeline.py` & `test_verifier.py`)
+## 3. Programmatic Verifier v5.2 (`pipeline.py` & `test_verifier.py`)
 
 Small local models frequently hallucinate numbers, invert team roles, or invent untracked player actions. Our **"Facts by Python, Color by LLM"** architecture enforces accuracy through `build_factual_core()` and `verify_color_commentary()` (`ColorCommentaryPayload`):
 
@@ -66,7 +66,7 @@ Small local models frequently hallucinate numbers, invert team roles, or invent 
 4. **Incident & Micro-Action Guardrails:** Word-boundary regex assertions reject unrecorded match incidents (`red card`, `penalty`, `injury`, `offside`, `corner`) and untracked player-position claims (`winger`, `right-back`, `clever run`, `cross`, `header`).
 5. **Role-Inversion Guards:** Rejects outputs that describe the victim as the aggressor during `ENTERED` or the presser as escaping during `EXITED`.
 
-All **16 unit and regression tests** in `test_verifier.py` (14 Verifier v5.1 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
+All **18 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
 
 ---
 
@@ -82,7 +82,7 @@ All **16 unit and regression tests** in `test_verifier.py` (14 Verifier v5.1 str
 - **Exit Timing Accuracy (within ±8 min of true end):** `103 / 111` (`92.8%`)
 
 ### B. LLM Verification Benchmark Across 60 Evaluations (`python3 llm_benchmark.py`)
-20 episodes per configuration evaluated against **Verifier v5.1** (95% Wilson confidence intervals in parentheses):
+20 episodes per configuration evaluated against **Verifier v5.2** (95% Wilson confidence intervals in parentheses):
 
 | Model & Language Configuration | Pass@1 (First Try) | Pass@2 (After Rejection Retry) | Template Fallbacks | Median Latency (CPU) | Min / Max Latency |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -116,7 +116,7 @@ All **16 unit and regression tests** in `test_verifier.py` (14 Verifier v5.1 str
 # 1. Install pinned dependencies
 pip install -r requirements.txt
 
-# 2. Run all 16 Verifier v5.1, ISO timestamp, and dynamic recap unit tests
+# 2. Run all 16 Verifier v5.2, ISO timestamp, and dynamic recap unit tests
 python3 test_verifier.py
 
 # 3. Generate deterministic Seed 42 match data & run offline 200-match detector benchmark
