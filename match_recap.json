@@ -1,16 +1,14 @@
 {
   "headline": "Full Time: Meteor City 2 - 0 Nova FC",
-  "tactical_summary": "Meteor City secures a 2-0 victory. The decisive tactical turning point (Momentum Index peak: -26.5 for Nova FC at minute 87) aligned with the verified high-press regime between minutes 57 and 62.",
+  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Verified high-press tactical shifts occurred between minutes 57 and 62 (key tactical inflection initiated at minute 57). Aggressive fluidity yielded decisive possession, ultimately crushing Nova FC's defense.",
   "turning_point": {
-    "minute": 87,
-    "delta": -48.2,
-    "team": "Nova FC",
-    "value": -26.5
+    "minute": 57,
+    "episode_id": "m_42_min57_ENTERED"
   },
   "key_episode_ids": [
     "m_42_min51_GOAL_EVT-m_42-1037",
-    "m_42_min57_ENTERED",
-    "m_42_min62_EXITED",
-    "m_42_min79_GOAL_EVT-m_42-1613"
-  ]
+    "m_42_min57_ENTERED"
+  ],
+  "agent_handoff_count": 4,
+  "recap_verified": true
 }

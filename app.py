@@ -68,7 +68,11 @@ def log_director_decision(episode_id: str, decision: str):
             break
     try:
         sink = FabricTelemetrySink()
-        asyncio.run(sink.ingest_record("DIRECTOR_AUDIT", record))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(sink.ingest_record("DIRECTOR_AUDIT", record))
+        except RuntimeError:
+            asyncio.run(sink.ingest_record("DIRECTOR_AUDIT", record))
     except Exception:
         pass
 

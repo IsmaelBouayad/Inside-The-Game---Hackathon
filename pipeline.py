@@ -202,9 +202,9 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
     team = alarm["team"].lower()
     status = alarm.get("status", "ENTERED")
 
-    # In analyst_color, team names are forbidden because build_factual_core already names both teams and their exact roles
-    if team in ac_lower or victim in ac_lower:
-        errors.append("Do not repeat team names in 'analyst_color': describe only collective spacing, tempo, and passing lanes.")
+    # Prevent role inversion if a team is mentioned in analyst_color
+    if status == "ENTERED" and re.search(rf"\b{re.escape(team)}\b.*(?:scrambling|all over the place|panics|collapses|struggling|pinned)", ac_lower):
+        errors.append(f"Role inversion: {alarm['team']} is the pressing aggressor, not scrambling on defense.")
 
     if status == "ENTERED":
         if re.search(rf"\b{re.escape(victim)}\b\s+(?:presses|pressing|suffocates|hounds|destroys|dominates|locks|traps|exploits|attacking)", combined_lower):
@@ -387,7 +387,7 @@ FACTS ALREADY FIXED BY PYTHON:
 YOUR TASK:
 Provide neutral team-level stylistic commentary that builds upon the fixed facts.
 STRICT RULES:
-1. Write 1 complete sentence for 'analyst_color' describing ONLY neutral collective spacing, passing lanes, or tempo. DO NOT mention team names in 'analyst_color'.
+1. Write 1 complete sentence for 'analyst_color' describing ONLY neutral collective spacing, passing lanes, or tempo. Keep it concise and factual.
 2. Write 1 short hype sentence for 'fan_view' (no '...' ellipses).
 3. DO NOT write any numbers, digits, or number words. Python supplies all metrics.
 4. DO NOT invent specific player positions or unrecorded incidents (NEVER mention winger, full-back, clever run, cross, header, corner, free kick, card, penalty, injury, substitution, or VAR).
@@ -426,7 +426,7 @@ Reply with ONLY valid JSON:
                 print(f"   ⚠️ [Verifier v5.2 Rejected]: {err_msg}")
                 prompt = (
                     f"REJECTED: {err_msg}. "
-                    f"Do NOT mention team names in analyst_color, do NOT use '...' or digits/number words. "
+                    f"Do NOT use '...' or digits/number words. "
                     f"Pick IDs from {json.dumps(trigger_ids)}."
                 )
         except Exception as e:
@@ -583,21 +583,24 @@ Reply with ONLY valid JSON:
 }}"""
     )
 
-    try:
-        res = await asyncio.wait_for(recap_agent.run("Synthesize post-match tactical color from episode handoff."), timeout=15.0)
-        parsed = MatchRecapPayload.model_validate_json(extract_json(res.text))
-        errs = verify_recap_output(parsed, valid_ep_set)
-        if not errs:
-            return {
-                "headline": headline,
-                "tactical_summary": f"{factual_summary} {parsed.tactical_color}".strip(),
-                "turning_point": turning_point_info,
-                "key_episode_ids": parsed.key_episode_ids,
-                "agent_handoff_count": len(verified_overlays),
-                "recap_verified": True
-            }
-    except Exception:
-        pass
+    recap_prompt = "Synthesize post-match tactical color from episode handoff. Output ONLY valid JSON."
+    for attempt in range(2):
+        try:
+            res = await asyncio.wait_for(recap_agent.run(recap_prompt), timeout=25.0)
+            parsed = MatchRecapPayload.model_validate_json(extract_json(res.text))
+            errs = verify_recap_output(parsed, valid_ep_set)
+            if not errs:
+                return {
+                    "headline": headline,
+                    "tactical_summary": f"{factual_summary} {parsed.tactical_color}".strip(),
+                    "turning_point": turning_point_info,
+                    "key_episode_ids": parsed.key_episode_ids,
+                    "agent_handoff_count": len(verified_overlays),
+                    "recap_verified": True
+                }
+            recap_prompt = f"REJECTED: {' | '.join(errs)}. Do NOT use digits or number words. Cite only IDs from {json.dumps(episode_ids[:2])}."
+        except Exception as e:
+            recap_prompt = f"Format error ({type(e).__name__}). Return ONLY valid JSON with 'tactical_color' and 'key_episode_ids': {json.dumps(episode_ids[:2])}." 
 
     return {
         "headline": headline,

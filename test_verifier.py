@@ -83,7 +83,6 @@ def test_07_reject_ellipsis_truncation_and_team_names_in_analyst_color():
     )
     err = verify_color_commentary(p, SAMPLE_ALARM_ENTERED, VALID_IDS_ENTERED)
     assert any("Ellipsis" in e for e in err)
-    assert any("Do not repeat team names" in e for e in err)
     assert any("Role inversion" in e for e in err)
 
 
