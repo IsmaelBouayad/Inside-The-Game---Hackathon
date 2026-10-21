@@ -9,6 +9,8 @@
   "errors": 0,
   "superseded_finals": 0,
   "fabric_delivery_mode": "fabric_eventstream_live",
-  "llm_latency_sec_median": 13.36,
-  "llm_latency_sec_max": 14.33
+  "fabric_live_sends_succeeded": 6,
+  "fabric_local_fallbacks": 0,
+  "llm_latency_sec_median": 5.48,
+  "llm_latency_sec_max": 5.98
 }

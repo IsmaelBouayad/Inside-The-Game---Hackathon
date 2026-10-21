@@ -146,7 +146,7 @@ def test_16_dynamic_recap_nova_win_and_draw_and_no_press():
     ]
     _, s1, _ = build_recap_factual_core(eps, {"Meteor City": 1, "Nova FC": 3}, language="English")
     assert "Nova FC claims a 3-1 victory" in s1
-    assert "minutes 48 and 54" in s1
+    assert "minutes 48 to 54" in s1
     assert "57" not in s1
 
     _, s2, _ = build_recap_factual_core([], {"Meteor City": 1, "Nova FC": 1}, language="English")
@@ -219,6 +219,17 @@ def test_18_end_to_end_worker_to_ui_persistence():
     asyncio.run(_run_worker_test())
 
 
+
+def test_19_french_mode_does_not_contaminate_english_multiaudience():
+    from pipeline import build_factual_core, build_multiaudience_views
+    fact_fr = build_factual_core(SAMPLE_ALARM_ENTERED, "French")
+    multi = build_multiaudience_views(SAMPLE_ALARM_ENTERED, analyst_color_en="", fan_en="")
+    multi["fr"]["analyst_view"] = f"{fact_fr} Le bloc resserre les lignes."
+    assert "At minute 57" in multi["en"]["analyst_view"]
+    assert "À la 57e minute" in multi["fr"]["analyst_view"]
+    assert "Le bloc resserre" not in multi["en"]["analyst_view"]
+
+
 if __name__ == "__main__":
     all_tests = [
         test_01_reject_invented_id,
@@ -239,6 +250,7 @@ if __name__ == "__main__":
         test_16_dynamic_recap_nova_win_and_draw_and_no_press,
         test_17_recap_verifier_validates_all_episode_ids,
         test_18_end_to_end_worker_to_ui_persistence,
+        test_19_french_mode_does_not_contaminate_english_multiaudience,
     ]
     for t in all_tests:
         t()

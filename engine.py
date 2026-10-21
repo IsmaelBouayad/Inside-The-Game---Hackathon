@@ -73,6 +73,8 @@ class Metrics:
             "errors": self.errors,
             "superseded_finals": self.superseded_finals,
             "fabric_delivery_mode": self.fabric_mode,
+            "fabric_live_sends_succeeded": getattr(self, "fabric_sent", 0),
+            "fabric_local_fallbacks": getattr(self, "fabric_fallbacks", 0),
             "llm_latency_sec_median": round(statistics.median(lat), 2) if lat else None,
             "llm_latency_sec_max": round(max(lat), 2) if lat else None
         }
@@ -152,12 +154,14 @@ async def llm_worker(
             fb = template_overlay(alarm, key, seq, "FINAL (Template - LLM Timeout)",
                                   reason=f"Timeout {llm_timeout}s", latency=latency)
             fb["superseded"] = seq < state_tracker["latest_seq"]
+            verified_overlays.append(fb)
             append_to_ui(fb)
             schedule_fabric_send(fabric, "OVERLAY_TIMEOUT", fb)
             print(f"   ⏱️ [Worker] TIMEOUT après {llm_timeout}s ({key}) - Gabarit conservé")
         except Exception as e:
             metrics.errors += 1
             err = template_overlay(alarm, key, seq, "FINAL (Template - LLM Error)", reason=type(e).__name__)
+            verified_overlays.append(err)
             append_to_ui(err)
             print(f"   ❌ [Worker] {type(e).__name__}: {e}")
         finally:
@@ -278,6 +282,10 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
         with open(RECAP_FILE, "w", encoding="utf-8") as f:
             json.dump(recap, f, indent=2, ensure_ascii=False)
 
+        metrics.fabric_sent = fabric.sent_live_count
+        metrics.fabric_fallbacks = fabric.local_fallback_count
+        if fabric.sent_live_count == 0 and not fabric.live_enabled:
+            metrics.fabric_mode = 'local_jsonl_fallback'
         final_metrics = metrics.dump()
 
         # Envoi synchrone final garanti vers Fabric pour POST_MATCH_RECAP et MATCH_METRICS

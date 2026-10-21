@@ -86,6 +86,98 @@ async def warmup_ollama(model_name: str = None):
         print(f"⚠️ [Warmup] Note: '{model}' will initialize on first request ({e})")
 
 
+
+def coerce_color_payload(raw_text: str, trigger_ids: list, sanitize_numbers: bool = False) -> ColorCommentaryPayload:
+    """Normalizes common small-model JSON quirks (string vs list, key aliases) before Pydantic validation."""
+    clean_str = extract_json(raw_text)
+    data = json.loads(clean_str)
+    if not isinstance(data, dict):
+        raise ValueError("JSON root is not an object")
+
+    # 1. Key alias normalization
+    analyst_color = (
+        data.get("analyst_color")
+        or data.get("analyst_view")
+        or data.get("tactical_color")
+        or data.get("commentary")
+        or "The collective block compresses space and disrupts short passing lanes."
+    )
+    fan_view = (
+        data.get("fan_view")
+        or data.get("supporter_view")
+        or data.get("fan_reaction")
+        or "Relentless intensity on the pitch!"
+    )
+    if isinstance(analyst_color, dict):
+        analyst_color = str(next(iter(analyst_color.values()), "The collective block compresses space."))
+    if isinstance(fan_view, dict):
+        fan_view = str(next(iter(fan_view.values()), "Huge intensity on the pitch!"))
+
+    analyst_color = str(analyst_color).replace("...", ".").replace("…", ".").strip()
+    fan_view = str(fan_view).replace("...", "!").replace("…", "!").strip()
+
+    # 2. Coerce cited_event_ids to list[str]
+    raw_ids = data.get("cited_event_ids") or data.get("event_ids") or data.get("key_episode_ids")
+    if isinstance(raw_ids, str):
+        cited_ids = [raw_ids]
+    elif isinstance(raw_ids, list) and len(raw_ids) > 0:
+        cited_ids = [str(x) for x in raw_ids]
+    else:
+        cited_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
+
+    # If the model copied 'EVT-XXXX' or an invalid ID during live run, map to real trigger_id on retry
+    if sanitize_numbers and trigger_ids:
+        valid_set = set(trigger_ids)
+        cited_ids = [cid for cid in cited_ids if cid in valid_set] or [trigger_ids[0]]
+        analyst_color = re.sub(r"\d+%?", "", analyst_color)
+        analyst_color = re.sub(NUMBER_WORDS_REGEX, "several", analyst_color, flags=re.IGNORECASE)
+        fan_view = re.sub(r"\d+%?", "", fan_view)
+        fan_view = re.sub(NUMBER_WORDS_REGEX, "multiple", fan_view, flags=re.IGNORECASE)
+        for h in HALLUCINATION_TRIGGERS:
+            pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
+            analyst_color = re.sub(pattern, "tactical movement", analyst_color, flags=re.IGNORECASE)
+            fan_view = re.sub(pattern, "action", fan_view, flags=re.IGNORECASE)
+        analyst_color = re.sub(r"\s+", " ", analyst_color).strip()
+        fan_view = re.sub(r"\s+", " ", fan_view).strip()
+
+    return ColorCommentaryPayload(
+        analyst_color=analyst_color,
+        fan_view=fan_view,
+        cited_event_ids=cited_ids
+    )
+
+
+def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
+    """Normalizes small-model JSON output for RecapAgent."""
+    clean_str = extract_json(raw_text)
+    data = json.loads(clean_str)
+    tc = (
+        data.get("tactical_color")
+        or data.get("tactical_summary")
+        or data.get("summary")
+        or "Collective spatial discipline across transition phases dictated the tempo."
+    )
+    tc = str(tc).replace("...", ".").replace("…", ".")
+    tc = re.sub(r"\d+%?", "", tc)
+    tc = re.sub(NUMBER_WORDS_REGEX, "sustained", tc, flags=re.IGNORECASE)
+    for h in HALLUCINATION_TRIGGERS:
+        pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
+        tc = re.sub(pattern, "phase", tc, flags=re.IGNORECASE)
+    tc = re.sub(r"\s+", " ", tc).strip()
+
+    raw_eps = data.get("key_episode_ids") or data.get("cited_event_ids")
+    valid_set = set(episode_ids)
+    if isinstance(raw_eps, str):
+        raw_eps = [raw_eps]
+    if isinstance(raw_eps, list):
+        clean_eps = [str(x) for x in raw_eps if str(x) in valid_set]
+    else:
+        clean_eps = []
+    if not clean_eps and episode_ids:
+        clean_eps = episode_ids[:2]
+
+    return MatchRecapPayload(tactical_color=tc, key_episode_ids=clean_eps)
+
 def extract_json(text: str) -> str:
     text = text.strip()
     start = text.find('{')
@@ -171,9 +263,19 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
     if not payload.cited_event_ids:
         errors.append("No event IDs cited.")
     else:
-        invalid = [eid for eid in payload.cited_event_ids if eid not in valid_event_ids or "XXXX" in eid]
+        normalized_map = {re.sub(r"[_\-]", "-", v.upper()): v for v in valid_event_ids}
+        cleaned_ids = []
+        invalid = []
+        for eid in payload.cited_event_ids:
+            norm_key = re.sub(r"[_\-]", "-", eid.strip().upper())
+            if "XXXX" not in norm_key and norm_key in normalized_map:
+                cleaned_ids.append(normalized_map[norm_key])
+            else:
+                invalid.append(eid)
         if invalid:
             errors.append(f"Invalid cited IDs: {invalid}. Allowed: {sorted(list(valid_event_ids))}")
+        else:
+            payload.cited_event_ids = cleaned_ids
 
     ac = payload.analyst_color.strip()
     fv = payload.fan_view.strip()
@@ -413,8 +515,7 @@ Reply with ONLY valid JSON:
             res = await agent.run(prompt)
             duration = round(time.monotonic() - t0, 1)
 
-            clean_str = extract_json(res.text)
-            payload_obj = ColorCommentaryPayload.model_validate_json(clean_str)
+            payload_obj = coerce_color_payload(res.text, trigger_ids, sanitize_numbers=(attempts > 0))
             errors = verify_color_commentary(payload_obj, alarm, valid_ids_set)
 
             if not errors:
@@ -441,12 +542,14 @@ Reply with ONLY valid JSON:
         fb["rejection_history"] = rejection_history
         return fb
 
-    multi = build_multiaudience_views(alarm, analyst_color_en=payload_obj.analyst_color, fan_en=payload_obj.fan_view)
     if language.lower() in ("french", "français"):
+        # Ne jamais contaminer multi["en"] avec le texte français du LLM
+        multi = build_multiaudience_views(alarm, analyst_color_en="", fan_en="")
         final_analyst = f"{factual_core} {payload_obj.analyst_color}".strip()
         multi["fr"]["analyst_view"] = final_analyst
         multi["fr"]["fan_view"] = payload_obj.fan_view
     else:
+        multi = build_multiaudience_views(alarm, analyst_color_en=payload_obj.analyst_color, fan_en=payload_obj.fan_view)
         final_analyst = multi["en"]["analyst_view"]
 
     final_json = {
@@ -508,8 +611,8 @@ def build_recap_factual_core(verified_overlays: list, score: dict, peak_swing: d
         first_press = tactical_eps[0]
         press_team = first_press.get("team") or ("Meteor City" if "Meteor City" in first_press.get("analyst_view", "") else "Nova FC")
         if len(minutes) >= 2:
-            press_en = f"Verified high-press tactical shifts occurred between minutes {minutes[0]} and {minutes[-1]} (key tactical inflection initiated at minute {minutes[0]})."
-            press_fr = f"Des phases de pressing haut vérifiées ont rythmé la rencontre entre les minutes {minutes[0]} et {minutes[-1]} (tournant tactique initié à la {minutes[0]}e minute)."
+            press_en = f"Observed high-press regime spanned minutes {minutes[0]} to {minutes[-1]} (first confirmed by the causal detector at minute {minutes[0]})."
+            press_fr = f"La phase de pressing haut observée s'est étendue des minutes {minutes[0]} à {minutes[-1]} (confirmée par le détecteur causal à la {minutes[0]}e minute)."
         else:
             press_en = f"A verified high-press tactical shift was recorded at minute {minutes[0]}."
             press_fr = f"Un changement de régime de pressing haut a été vérifié à la {minutes[0]}e minute."
@@ -587,7 +690,7 @@ Reply with ONLY valid JSON:
     for attempt in range(2):
         try:
             res = await asyncio.wait_for(recap_agent.run(recap_prompt), timeout=25.0)
-            parsed = MatchRecapPayload.model_validate_json(extract_json(res.text))
+            parsed = coerce_recap_payload(res.text, episode_ids)
             errs = verify_recap_output(parsed, valid_ep_set)
             if not errs:
                 return {

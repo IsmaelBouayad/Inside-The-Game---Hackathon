@@ -15,7 +15,7 @@ Live football broadcasters face three strict constraints when deploying generati
 2. **Three-Tier Broadcast Continuity (`engine.py`):**
    - **Tier 0 (Instant Goal Overlays):** 0 ms deterministic templates narrate goals live as they happen.
    - **Tier 1 (Instant Tactical DRAFT):** When a tactical alarm fires, a deterministic template is written immediately to `broadcast_ui.jsonl` so the broadcast director never waits on the LLM.
-   - **Tier 2 (AI-Verified FINAL):** An asynchronous worker calls a local LLM (**Microsoft Phi-4-mini** or **Llama 3.2**) via **Microsoft Agent Framework** (`pipeline.py`). Once validated by `verify_color_commentary` (v5.1), the overlay is written to `broadcast_ui.jsonl` and upgrades the corresponding `DRAFT` in-place in the UI.
+   - **Tier 2 (AI-Verified FINAL):** An asynchronous worker calls a local LLM (**Microsoft Phi-4-mini** or **Llama 3.2**) via **Microsoft Agent Framework** (`pipeline.py`). Once validated by `verify_color_commentary` (v5.2), the overlay is written to `broadcast_ui.jsonl` and upgrades the corresponding `DRAFT` in-place in the UI.
 3. **Collaborative Multi-Agent Handoff (`ExplainerAgent` ──► `RecapAgent`):** At the final whistle, `generate_match_recap()` receives the structured handoff of verified live episodes from `ExplainerAgent`, constructs a dynamic factual core in Python (`build_recap_factual_core` — dynamically computing Win/Loss/Draw and actual pressing intervals without hardcoded minutes or winners), and invokes `RecapAgent` to synthesize a verified post-match tactical conclusion (`match_recap.json`).
 4. **Microsoft Fabric Eventstream Sink (`fabric_sink.py`):** Streams live `ALARM`, `GOAL_TIER0`, `OVERLAY_FINAL`, `DIRECTOR_AUDIT`, `POST_MATCH_RECAP`, and `MATCH_METRICS` events to **Microsoft Fabric Eventstream** via the Azure Event Hubs SDK (`azure.eventhub.aio`), with automatic fallback to `fabric_local_fallback.jsonl` when offline or in CI.
 
@@ -66,7 +66,7 @@ Small local models frequently hallucinate numbers, invert team roles, or invent 
 4. **Incident & Micro-Action Guardrails:** Word-boundary regex assertions reject unrecorded match incidents (`red card`, `penalty`, `injury`, `offside`, `corner`) and untracked player-position claims (`winger`, `right-back`, `clever run`, `cross`, `header`).
 5. **Role-Inversion Guards:** Rejects outputs that describe the victim as the aggressor during `ENTERED` or the presser as escaping during `EXITED`.
 
-All **18 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
+All **19 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
 
 ---
 

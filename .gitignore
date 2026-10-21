@@ -5,3 +5,4 @@ venv/
 .pytest_cache/
 *.jsonl
 demo_cache.json
+.Rhistory

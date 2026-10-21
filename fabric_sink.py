@@ -18,6 +18,8 @@ class FabricTelemetrySink:
         self.conn_str = os.environ.get("EVENTHUB_CONNECTION_STRING", "").strip()
         self.live_enabled = False
         self._producer = None
+        self.sent_live_count = 0
+        self.local_fallback_count = 0
 
         if self.conn_str and "Endpoint=sb://" in self.conn_str:
             try:
@@ -42,10 +44,12 @@ class FabricTelemetrySink:
                 batch = await self._producer.create_batch()
                 batch.add(self._EventData(json.dumps(record, ensure_ascii=False)))
                 await self._producer.send_batch(batch)
+                self.sent_live_count += 1
                 return "fabric_eventstream_live"
             except Exception as e:
                 record["delivery_mode"] = f"local_fallback_after_error ({type(e).__name__})"
 
+        self.local_fallback_count += 1
         with open(FALLBACK_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         await asyncio.sleep(0)
