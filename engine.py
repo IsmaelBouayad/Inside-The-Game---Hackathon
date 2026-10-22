@@ -176,7 +176,7 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
         print(f"❌ {events_file} introuvable. Lancez 'python3 generator.py --seed 42' d'abord.")
         return
 
-    for f_path in (UI_FILE, CLOCK_FILE, RECAP_FILE):
+    for f_path in (UI_FILE, CLOCK_FILE, RECAP_FILE, METRICS_FILE):
         if os.path.exists(f_path):
             os.remove(f_path)
 
@@ -269,6 +269,9 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
             await asyncio.sleep(0)
 
         print("\n🏁 Coup de sifflet final du match.")
+        if not detector.momentum_history or detector.momentum_history[-1]["minute"] < 90:
+            detector.compute_momentum(90)
+        update_clock(90, score, "Full Time", 0.0, detector.momentum_history, detector.peak_swing)
         try:
             await asyncio.wait_for(queue.join(), timeout=llm_timeout * (QUEUE_SIZE + 1))
         except asyncio.TimeoutError:
