@@ -805,18 +805,21 @@ def main():
             fab_sends = metrics.get("fabric_live_sends_succeeded", 0)
             fab_mode = "LIVE EVENTSTREAM" if metrics.get("fabric_delivery_mode") == "fabric_eventstream_live" else "READY / STANDBY"
 
+            dir_approved_cnt = sum(1 for e in episodes if e.get("director_decision") == "APPROVED_ON_AIR")
+            dir_held_cnt = sum(1 for e in episodes if e.get("director_decision") == "HELD_BY_DIRECTOR")
+            upd_ts = metrics.get("last_updated_utc", "STANDBY")
             st.markdown(
                 compact_html(f"""
                 <div class="sb-telemetry-grid">
-                    <div class="sb-metric-card"><div class="sb-metric-lbl">Events</div><div class="sb-metric-num">{ev_count}</div></div>
+                    <div class="sb-metric-card"><div class="sb-metric-lbl">Events Streamed</div><div class="sb-metric-num">{ev_count}</div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Tactical Alarms</div><div class="sb-metric-num">{alarms_cnt}</div></div>
-                    <div class="sb-metric-card"><div class="sb-metric-lbl">Verified On-Air</div><div class="sb-metric-num" style="color:#3FB950;">{ver_cnt} / {alarms_cnt}</div></div>
-                    <div class="sb-metric-card"><div class="sb-metric-lbl">Tier-0 Goals</div><div class="sb-metric-num">{goals_cnt}</div></div>
+                    <div class="sb-metric-card"><div class="sb-metric-lbl">AI Verified</div><div class="sb-metric-num" style="color:#3FB950;">{ver_cnt} / {alarms_cnt}</div></div>
+                    <div class="sb-metric-card"><div class="sb-metric-lbl">Director App / Hold</div><div class="sb-metric-num" style="color:#58A6FF;">{dir_approved_cnt} / <span style="color:#FF7B72;">{dir_held_cnt}</span></div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Median Latency</div><div class="sb-metric-num" style="color:{lat_color};">{lat_disp}</div></div>
-                    <div class="sb-metric-card"><div class="sb-metric-lbl">Fabric Sends</div><div class="sb-metric-num" style="color:#58A6FF;">{fab_sends}</div></div>
+                    <div class="sb-metric-card"><div class="sb-metric-lbl">Fabric Live Sends</div><div class="sb-metric-num" style="color:#58A6FF;">{fab_sends}</div></div>
                 </div>
                 <div style="margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#8B949E;">
-                    SINK STATUS: {fab_mode}
+                    SINK: {fab_mode} &bull; UPDATED: {upd_ts[-9:] if len(upd_ts) >= 9 else upd_ts}
                 </div>
                 """),
                 unsafe_allow_html=True
@@ -869,7 +872,7 @@ def main():
                 r_sum = html.escape(strip_non_ascii_symbols(recap.get("tactical_summary", "")))
                 r_fact, r_color = split_fact_and_color(r_sum)
                 r_chips = "".join(f'<span class="bc-chip">{html.escape(k)}</span>' for k in recap.get("key_episode_ids", []))
-                r_ver = "RECAP AGENT VERIFIED" if recap.get("recap_verified") else "DETERMINISTIC SUMMARY"
+                r_ver = "AI VERIFIED (RECAP AGENT)" if recap.get("recap_verified") else "DETERMINISTIC FALLBACK (NO LLM)"
                 st.markdown(
                     compact_html(f"""
                     <div class="bc-card" style="border-color:#0078D4; background:linear-gradient(135deg, rgba(0,120,212,0.12) 0%, #141B24 70%);">

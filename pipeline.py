@@ -12,6 +12,7 @@ from typing import List
 
 CACHE_FILE = "demo_cache.json"
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 MATCH_KICKOFF = datetime(2026, 10, 27, 15, 0, 0)
 
 NUMBER_WORDS_REGEX = (
@@ -67,7 +68,7 @@ def save_cache(cache_data):
 
 def get_clients(model_name: str = None):
     model = model_name or DEFAULT_MODEL
-    native_client = AsyncOpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
+    native_client = AsyncOpenAI(api_key="ollama", base_url=OLLAMA_BASE_URL)
     return OpenAIChatCompletionClient(model=model, async_client=native_client)
 
 
@@ -75,7 +76,7 @@ async def warmup_ollama(model_name: str = None):
     model = model_name or DEFAULT_MODEL
     try:
         t0 = time.monotonic()
-        native_client = AsyncOpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
+        native_client = AsyncOpenAI(api_key="ollama", base_url=OLLAMA_BASE_URL)
         await native_client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "ping"}],
@@ -630,7 +631,8 @@ async def generate_match_recap(
             "turning_point": turning_point_info,
             "key_episode_ids": episode_ids,
             "agent_handoff_count": len(verified_overlays),
-            "recap_verified": True
+            "recap_verified": False,
+            "verification_mode": "deterministic_fallback"
         }
 
     client = get_clients(model)

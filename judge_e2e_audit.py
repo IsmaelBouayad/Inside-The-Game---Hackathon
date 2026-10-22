@@ -1,3 +1,4 @@
+import re
 import asyncio
 import json
 import os
@@ -50,11 +51,21 @@ async def run_full_judge_audit():
     forbidden_files = [".env", ".Rhistory", "project.txt", "check_llm.py", "diagnostic.py", "test_maf.py"]
     tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True).stdout.splitlines()
     leaked = [f for f in forbidden_files if f in tracked]
+    secret_regex = re.compile(r"(ghp_[A-Za-z0-9]{20,}|SharedAccessKey=[A-Za-z0-9+/=]{20,}|sk-[A-Za-z0-9]{20,})")
+    content_leaks = []
+    for tf in tracked:
+        if os.path.exists(tf) and tf != "judge_e2e_audit.py":
+            try:
+                txt = open(tf, "r", encoding="utf-8", errors="ignore").read()
+                if secret_regex.search(txt):
+                    content_leaks.append(tf)
+            except Exception:
+                pass
     judge.record(
         "1. Technical Implementation",
-        "Known Scratch & Env Files Absent from Git Index",
-        len(leaked) == 0,
-        f"0 known scratch/.env files in git index ({len(tracked)} tracked files)" if not leaked else f"Found: {leaked}"
+        "Git Index Hygiene & Regex Secret Content Scan",
+        len(leaked) == 0 and len(content_leaks) == 0,
+        f"0 scratch files & 0 credential patterns across all {len(tracked)} tracked files" if not (leaked or content_leaks) else f"Leaks: {leaked + content_leaks}"
     )
 
     # 2. MULTI-SCENARIO GENERATOR & DETECTOR GENERALIZATION (ALL CONTROL SEEDS TESTED)
@@ -203,6 +214,7 @@ async def run_full_judge_audit():
         "# Automated Hackathon Judge — End-to-End Execution Report",
         "",
         f"- **Execution Timestamp (UTC):** `{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}`",
+        f"- **Git Commit (HEAD) & Seed:** `{subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True).stdout.strip()}` | `Seed 42 (min 48..90)`",
         f"- **Total Audit Duration:** `{duration}s`",
         f"- **Overall Verification Score:** **`{passed_count} / {total_count} Checks Passed ({int((passed_count/total_count)*100)}%)`**",
         "",

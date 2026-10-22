@@ -5,24 +5,40 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   control-room-ui:
     build: .
     ports:
       - "8501:8501"
-    env_file:
-      - .env.example
+    volumes:
+      - ./shared_state:/app/shared_state
+      - ./:/app
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2} - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
 
   match-engine:
     build: .
     command: ["python3", "engine.py", "--start-minute", "48"]
-    env_file:
-      - .env.example
+    volumes:
+      - ./shared_state:/app/shared_state
+      - ./:/app
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2} - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
     depends_on:
-      - ollama
-      - control-room-ui
+      ollama:
+        condition: service_healthy
+      control-room-ui:
+        condition: service_started
 
 volumes:
   ollama_data:

@@ -60,7 +60,10 @@ class Metrics:
         self.fabric_mode = "local_jsonl_fallback"
         self.latencies: list[float] = []
 
-    def dump(self):
+    def dump(self, fabric=None):
+        if fabric is not None:
+            self.fabric_sent = fabric.sent_live_count
+            self.fabric_fallbacks = fabric.local_fallback_count
         lat = self.latencies
         data = {
             "events": self.events,
@@ -76,7 +79,8 @@ class Metrics:
             "fabric_live_sends_succeeded": getattr(self, "fabric_sent", 0),
             "fabric_local_fallbacks": getattr(self, "fabric_fallbacks", 0),
             "llm_latency_sec_median": round(statistics.median(lat), 2) if lat else None,
-            "llm_latency_sec_max": round(max(lat), 2) if lat else None
+            "llm_latency_sec_max": round(max(lat), 2) if lat else None,
+            "last_updated_utc": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         }
         with open(METRICS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
@@ -166,6 +170,7 @@ async def llm_worker(
             print(f"   ❌ [Worker] {type(e).__name__}: {e}")
         finally:
             state_tracker["worker_busy"] = False
+            metrics.dump(fabric)
             queue.task_done()
 
 
@@ -236,6 +241,7 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
                 append_to_ui(goal_ov)
                 verified_overlays.append(goal_ov)
                 schedule_fabric_send(fabric, "GOAL_TIER0", goal_ov)
+                metrics.dump(fabric)
                 print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {event['team']} ({score})")
 
             alarm = detector.process_event(event)
@@ -246,6 +252,7 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
                     event["minute"], score, detector.state, active_speed,
                     detector.momentum_history, detector.peak_swing
                 )
+                metrics.dump(fabric)
 
             if alarm:
                 metrics.alarms += 1
@@ -258,6 +265,7 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
                 draft = template_overlay(alarm, key, seq, "DRAFT (Live)")
                 append_to_ui(draft)
                 schedule_fabric_send(fabric, "ALARM", alarm)
+                metrics.dump(fabric)
 
                 job = (seq, alarm, list(recent))
                 if queue.full():
@@ -289,13 +297,11 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
         metrics.fabric_fallbacks = fabric.local_fallback_count
         if fabric.sent_live_count == 0 and not fabric.live_enabled:
             metrics.fabric_mode = 'local_jsonl_fallback'
-        final_metrics = metrics.dump()
-
-        # Envoi synchrone final garanti vers Fabric pour POST_MATCH_RECAP et MATCH_METRICS
-        await fabric.ingest_record("POST_MATCH_RECAP", recap)
-        await fabric.ingest_record("MATCH_METRICS", final_metrics)
         if pending_fabric_tasks:
             await asyncio.gather(*pending_fabric_tasks, return_exceptions=True)
+        await fabric.ingest_record("POST_MATCH_RECAP", recap)
+        final_metrics = metrics.dump(fabric)
+        await fabric.ingest_record("MATCH_METRICS", final_metrics)
 
     finally:
         worker.cancel()

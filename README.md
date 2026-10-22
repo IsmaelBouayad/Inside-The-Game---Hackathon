@@ -116,7 +116,7 @@ All **21 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 str
 # 1. Install pinned dependencies
 pip install -r requirements.txt
 
-# 2. Run all 16 Verifier v5.2, ISO timestamp, and dynamic recap unit tests
+# 2. Run all 21 Verifier v5.2, ISO timestamp, and dynamic recap unit tests
 python3 test_verifier.py
 
 # 3. Generate deterministic Seed 42 match data & run offline 200-match detector benchmark
