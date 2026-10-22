@@ -230,6 +230,46 @@ def test_19_french_mode_does_not_contaminate_english_multiaudience():
     assert "Le bloc resserre" not in multi["en"]["analyst_view"]
 
 
+
+def test_20_reject_french_role_inversion():
+    p_ent = ColorCommentaryPayload(
+        analyst_color="Le bloc est très haut.",
+        fan_view="Nova FC étouffe complètement Meteor City !",
+        cited_event_ids=["EVT-m_42-1154"]
+    )
+    err1 = verify_color_commentary(p_ent, SAMPLE_ALARM_ENTERED, VALID_IDS_ENTERED)
+    assert any("Role inversion" in e for e in err1)
+
+    p_ext = ColorCommentaryPayload(
+        analyst_color="Bonne relance.",
+        fan_view="Meteor City casse le pressing avec brio !",
+        cited_event_ids=["EVT-m_42-1265"]
+    )
+    err2 = verify_color_commentary(p_ext, SAMPLE_ALARM_EXITED_RECOVERED, VALID_IDS_EXITED)
+    assert any("Role inversion" in e for e in err2)
+
+
+def test_21_unit_test_detector_custom_teams_state_machine():
+    from detector import OnlineShiftDetector
+    d = OnlineShiftDetector(teams=("Arsenal", "Liverpool"), min_passes=3, min_press=3, entry_acc=0.60)
+    # Minute 1: Liverpool (away, defends x > 67) is pressed by Arsenal
+    events = [
+        {"event_id": "E1", "minute": 1, "team": "Liverpool", "event_type": "Pass", "start_x": 80.0, "outcome": "Failure"},
+        {"event_id": "E2", "minute": 1, "team": "Liverpool", "event_type": "Pass", "start_x": 75.0, "outcome": "Failure"},
+        {"event_id": "E3", "minute": 1, "team": "Liverpool", "event_type": "Pass", "start_x": 70.0, "outcome": "Success"},
+        {"event_id": "E4", "minute": 1, "team": "Arsenal", "event_type": "Pressure", "x": 78.0},
+        {"event_id": "E5", "minute": 1, "team": "Arsenal", "event_type": "Tackle", "x": 75.0},
+        {"event_id": "E6", "minute": 1, "team": "Arsenal", "event_type": "Interception", "x": 72.0},
+        # Minute 2 triggers evaluation of completed minute 1
+        {"event_id": "E7", "minute": 2, "team": "Arsenal", "event_type": "Pass", "start_x": 50.0, "outcome": "Success"},
+    ]
+    alarms = [a for e in events if (a := d.process_event(e))]
+    assert len(alarms) == 1
+    assert alarms[0]["status"] == "ENTERED"
+    assert alarms[0]["team"] == "Arsenal"
+    assert alarms[0]["victim"] == "Liverpool"
+
+
 if __name__ == "__main__":
     all_tests = [
         test_01_reject_invented_id,
@@ -251,6 +291,8 @@ if __name__ == "__main__":
         test_17_recap_verifier_validates_all_episode_ids,
         test_18_end_to_end_worker_to_ui_persistence,
         test_19_french_mode_does_not_contaminate_english_multiaudience,
+        test_20_reject_french_role_inversion,
+        test_21_unit_test_detector_custom_teams_state_machine,
     ]
     for t in all_tests:
         t()

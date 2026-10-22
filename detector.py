@@ -1,20 +1,28 @@
 from collections import deque
 
 PRESS_TYPES = ("Interception", "Tackle", "Pressure")
-OTHER = {"Meteor City": "Nova FC", "Nova FC": "Meteor City"}
+DEFAULT_TEAMS = ("Meteor City", "Nova FC")
+OTHER = {DEFAULT_TEAMS[0]: DEFAULT_TEAMS[1], DEFAULT_TEAMS[1]: DEFAULT_TEAMS[0]}
 
 
-def in_own_third(team: str, x: float) -> bool:
-    """Meteor City defends x < 33, Nova FC defends x > 67."""
-    return x < 33.0 if team == "Meteor City" else x > 67.0
+def in_own_third(team: str, x: float, home_team: str = "Meteor City") -> bool:
+    """Home team defends x < 33, Away team defends x > 67."""
+    return x < 33.0 if team == home_team else x > 67.0
 
 
 class OnlineShiftDetector:
-    """Causal High-Press detector + Continuous Momentum Shift Index (Track 2)."""
+    """
+    Config-driven Causal High-Press detector + Continuous Momentum Shift Index (Track 2).
+    Supports arbitrary team pairings via `teams=(home_team, away_team)`.
+    """
 
     def __init__(self, entry_window=3, exit_window=8, entry_acc=0.60, min_passes=3, min_press=7,
                  exit_acc=0.75, exit_min_passes=5, exit_press_max=1,
-                 confirm_entry=1, confirm_exit=2, min_duration=5):
+                 confirm_entry=1, confirm_exit=2, min_duration=5,
+                 teams: tuple[str, str] = DEFAULT_TEAMS):
+        self.teams = (teams[0], teams[1])
+        self.home_team, self.away_team = self.teams[0], self.teams[1]
+        self.other = {self.home_team: self.away_team, self.away_team: self.home_team}
         self.entry_window, self.exit_window = entry_window, exit_window
         self.entry_acc, self.min_passes, self.min_press = entry_acc, min_passes, min_press
         self.exit_acc, self.exit_min_passes, self.exit_press_max = exit_acc, exit_min_passes, exit_press_max
@@ -23,49 +31,47 @@ class OnlineShiftDetector:
         self.buffer = deque()
         self.state, self.press_team, self.entry_minute = "Normal", None, None
         self._last_minute = None
-        self._entry_streak = {"Meteor City": 0, "Nova FC": 0}
+        self._entry_streak = {self.home_team: 0, self.away_team: 0}
         self._exit_streak = 0
-        # Historique continu du Momentum Index [-100 = 100% Nova FC, +100 = 100% Meteor City]
         self.momentum_history: list[dict] = []
-        self.peak_swing: dict = {"minute": 0, "delta": 0.0, "team": "Meteor City", "value": 0.0}
+        self.peak_swing: dict = {"minute": 0, "delta": 0.0, "team": self.home_team, "value": 0.0}
 
     def _window(self, minute, width):
         return [e for e in self.buffer if minute - width <= e["minute"] <= minute - 1]
 
     def _facts(self, victim, minute, width):
-        presser = OTHER[victim]
+        presser = self.other[victim]
         w = self._window(minute, width)
         passes = [e for e in w if e["team"] == victim and e["event_type"] == "Pass"
-                  and in_own_third(victim, e.get("start_x", 50))]
+                  and in_own_third(victim, e.get("start_x", 50), self.home_team)]
         press = [e for e in w if e["team"] == presser and e["event_type"] in PRESS_TYPES
-                 and in_own_third(victim, e.get("x", e.get("start_x", 50)))]
+                 and in_own_third(victim, e.get("x", e.get("start_x", 50)), self.home_team)]
         acc = (sum(e["outcome"] == "Success" for e in passes) / len(passes)) if passes else None
         return passes, press, acc
 
     def compute_momentum(self, minute: int) -> dict:
-        """Calcule l'indice de Momentum continu [-100..+100] sur une fenêtre glissante de 4 minutes."""
         w = [e for e in self.buffer if max(0, minute - 4) <= e["minute"] <= minute]
-        score_m, score_n = 0.0, 0.0
+        score_home, score_away = 0.0, 0.0
         for e in w:
             etype = e["event_type"]
             team = e["team"]
             weight = 0.0
             if etype == "Pass" and e.get("outcome") == "Success":
                 end_x = e.get("end_x", 50.0)
-                in_att_third = (end_x > 67.0) if team == "Meteor City" else (end_x < 33.0)
+                in_att_third = (end_x > 67.0) if team == self.home_team else (end_x < 33.0)
                 weight = 2.5 if in_att_third else 1.0
             elif etype in PRESS_TYPES:
                 weight = 3.0
             elif etype == "Shot":
                 weight = 18.0 if e.get("outcome") == "Goal" else 6.0
 
-            if team == "Meteor City":
-                score_m += weight
-            else:
-                score_n += weight
+            if team == self.home_team:
+                score_home += weight
+            elif team == self.away_team:
+                score_away += weight
 
-        total = score_m + score_n
-        raw_index = round(((score_m - score_n) / total) * 100.0, 1) if total > 0 else 0.0
+        total = score_home + score_away
+        raw_index = round(((score_home - score_away) / total) * 100.0, 1) if total > 0 else 0.0
         prev_val = self.momentum_history[-1]["momentum_index"] if self.momentum_history else 0.0
         delta = round(raw_index - prev_val, 1)
 
@@ -73,7 +79,7 @@ class OnlineShiftDetector:
             "minute": minute,
             "momentum_index": raw_index,
             "delta": delta,
-            "dominant_team": "Meteor City" if raw_index >= 0 else "Nova FC",
+            "dominant_team": self.home_team if raw_index >= 0 else self.away_team,
             "regime": self.state
         }
         self.momentum_history.append(point)
@@ -82,7 +88,7 @@ class OnlineShiftDetector:
             self.peak_swing = {
                 "minute": minute,
                 "delta": delta,
-                "team": "Meteor City" if delta > 0 else "Nova FC",
+                "team": self.home_team if delta > 0 else self.away_team,
                 "value": raw_index
             }
         return point
@@ -100,7 +106,7 @@ class OnlineShiftDetector:
 
     def _entry(self, minute):
         fired = None
-        for victim in ("Meteor City", "Nova FC"):
+        for victim in self.teams:
             passes, press, acc = self._facts(victim, minute, self.entry_window)
             ok = (len(passes) >= self.min_passes and acc is not None and acc <= self.entry_acc and len(press) >= self.min_press)
             self._entry_streak[victim] = self._entry_streak[victim] + 1 if ok else 0
@@ -109,9 +115,9 @@ class OnlineShiftDetector:
         if not fired:
             return None
         victim, passes, press, acc = fired
-        self.state, self.press_team, self.entry_minute = "High Press", OTHER[victim], minute
+        self.state, self.press_team, self.entry_minute = "High Press", self.other[victim], minute
         self._exit_streak = 0
-        self._entry_streak = {"Meteor City": 0, "Nova FC": 0}
+        self._entry_streak = {self.home_team: 0, self.away_team: 0}
         failed = [e for e in passes if e["outcome"] == "Failure"]
         return {
             "minute": minute, "type": "High Press", "status": "ENTERED",
@@ -122,7 +128,7 @@ class OnlineShiftDetector:
         }
 
     def _exit(self, minute):
-        victim = OTHER[self.press_team]
+        victim = self.other[self.press_team]
         passes, press, acc = self._facts(victim, minute, self.exit_window)
         recent_press = [e for e in press if e["minute"] >= minute - self.entry_window]
         recovered = (len(passes) >= self.exit_min_passes and acc is not None and acc > self.exit_acc)
@@ -132,7 +138,6 @@ class OnlineShiftDetector:
             return None
         team = self.press_team
         self.state, self.press_team, self.entry_minute = "Normal", None, None
-        # Distinction explicite exigée par l'audit : relance réussie vs épuisement du pressing
         exit_reason = "recovered" if recovered else "exhausted"
         ok_passes = [e for e in passes if e["outcome"] == "Success"]
         return {

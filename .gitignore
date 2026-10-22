@@ -6,3 +6,5 @@ venv/
 *.jsonl
 demo_cache.json
 .Rhistory
+audit_pack.txt
+director_audit.jsonl

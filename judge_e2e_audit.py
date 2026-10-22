@@ -39,12 +39,12 @@ async def run_full_judge_audit():
 
     # 1. UNIT TEST SUITE (19 TESTS)
     res_tests = subprocess.run([sys.executable, "test_verifier.py"], capture_output=True, text=True)
-    tests_ok = (res_tests.returncode == 0 and "19/19" in res_tests.stdout)
+    tests_ok = (res_tests.returncode == 0 and "21/21" in res_tests.stdout)
     judge.record(
         "1. Technical Implementation",
-        "Verifier v5.2 & Regression Unit Suite (19 tests)",
+        "Verifier v5.2 & Regression Unit Suite (21 tests)",
         tests_ok,
-        "19/19 unit & regression tests passed" if tests_ok else f"Failed: {res_tests.stderr or res_tests.stdout[-200:]}"
+        "21/21 unit & regression tests passed" if tests_ok else f"Failed: {res_tests.stderr or res_tests.stdout[-200:]}"
     )
 
     forbidden_files = [".env", ".Rhistory", "project.txt", "check_llm.py", "diagnostic.py", "test_maf.py"]

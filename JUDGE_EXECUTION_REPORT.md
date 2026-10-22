@@ -1,19 +1,19 @@
 # Automated Hackathon Judge — End-to-End Execution Report
 
-- **Execution Timestamp (UTC):** `2026-10-21T15:20:52Z`
-- **Total Audit Duration:** `57.49s`
+- **Execution Timestamp (UTC):** `2026-10-22T10:56:12Z`
+- **Total Audit Duration:** `72.31s`
 - **Overall Verification Score:** **`10 / 10 Checks Passed (100%)`**
 
 ## 1. End-to-End Verification Matrix
 
 | Category | Verification Check | Status | Empirical Evidence |
 | :--- | :--- | :---: | :--- |
-| 1. Technical Implementation | Verifier v5.2 & Regression Unit Suite (19 tests) | **PASS** | 19/19 unit & regression tests passed |
+| 1. Technical Implementation | Verifier v5.2 & Regression Unit Suite (21 tests) | **PASS** | 21/21 unit & regression tests passed |
 | 1. Technical Implementation | Known Scratch & Env Files Absent from Git Index | **PASS** | 0 known scratch/.env files in git index (23 tracked files) |
 | 2. Data & Detector | Seed 42 Ground Truth & Realism | **PASS** | Pass Acc: 89.7%, Score: {'Meteor City': 2, 'Nova FC': 0}, True Press Window: min 52..64 |
 | 2. Data & Detector | Control Match Silence Across All Control Seeds in 1..30 | **PASS** | 0 false alarms across all 10 control seeds ([2, 4, 9, 12, 16, 20, 22, 24, 25, 28]) |
 | 2. Data & Detector | Independent Outcome Generalization (Both Nova FC Win AND Draw Verified) | **PASS** | Nova FC win verified on seeds [1, 6, 9]; Draw verified on seeds [3, 5, 7] |
-| 3. Live Agentic Pipeline | In-Place DRAFT -> FINAL (AI Verified) Upgrade on All Tactical Alarms | **PASS** | Upgraded episodes: ['m_42_min57_ENTERED', 'm_42_min62_EXITED'] (llm_verified=2/2, median_latency=5.48s) |
+| 3. Live Agentic Pipeline | In-Place DRAFT -> FINAL (AI Verified) Upgrade on All Tactical Alarms | **PASS** | Upgraded episodes: ['m_42_min57_ENTERED', 'm_42_min62_EXITED'] (llm_verified=2/2, median_latency=11.08s) |
 | 3. Live Agentic Pipeline | Strict ISO-8601 Timestamp Validity (including minute >= 60) | **PASS** | All 6 emitted overlay lines have valid ISO-8601 timestamps |
 | 4. UX & Multi-Audience | Uncontaminated Bilingual Split-Screen (EN & FR Verified in Both Modes) | **PASS** | EN feed starts with 'At minute 57' and FR feed starts with 'À la 57e minute' without cross-contamination |
 | 4. UX & Multi-Audience | Verified RecapAgent Handoff & Causal Detection Wording | **PASS** | recap_verified=True, causal wording verified ('first confirmed by the causal detector at minute 57') |
@@ -34,8 +34,8 @@
   "fabric_delivery_mode": "fabric_eventstream_live",
   "fabric_live_sends_succeeded": 6,
   "fabric_local_fallbacks": 0,
-  "llm_latency_sec_median": 5.48,
-  "llm_latency_sec_max": 5.98
+  "llm_latency_sec_median": 11.08,
+  "llm_latency_sec_max": 13.18
 }
 ```
 
@@ -78,12 +78,12 @@
     "episode_seq": 1
   },
   "m_42_min57_ENTERED": {
-    "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Meteor City's high-pressing midfield trio creates a congested, mid-square layout with narrow passing lanes, stifling Nova FC's build-up tempo.",
-    "fan_view": "THEPressure IS ON!",
+    "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Nova FC's players are scattered throughout the pocket, forcing Meteor City to push deeper, but their attacking opportunities are limited by the defensive shape.",
+    "fan_view": "OH, METEOR IS PUTTING THE SQUEEZE ON, FOLKS!",
     "multiaudience": {
       "en": {
-        "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Meteor City's high-pressing midfield trio creates a congested, mid-square layout with narrow passing lanes, stifling Nova FC's build-up tempo.",
-        "fan_view": "THEPressure IS ON!"
+        "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Nova FC's players are scattered throughout the pocket, forcing Meteor City to push deeper, but their attacking opportunities are limited by the defensive shape.",
+        "fan_view": "OH, METEOR IS PUTTING THE SQUEEZE ON, FOLKS!"
       },
       "fr": {
         "analyst_view": "À la 57e minute, Meteor City enclenche un pressing haut avec 8 actions défensives dans le tiers défensif de Nova FC, réduisant la précision de relance adverse à 50%. Le bloc collectif resserre les lignes et verrouille la relance courte.",
@@ -95,7 +95,7 @@
       }
     },
     "cited_event_ids": [
-      "EVT-m_42-1144"
+      "EVT-m_42-1145"
     ],
     "language_used": "English",
     "target_persona": "General Fan",
@@ -113,17 +113,17 @@
     "is_fallback": false,
     "episode_seq": 2,
     "superseded": false,
-    "llm_latency_sec": 4.98,
+    "llm_latency_sec": 8.98,
     "completed_at_match_minute": 57,
     "render_status": "FINAL (AI Verified)"
   },
   "m_42_min62_EXITED": {
-    "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City, now, is attempting to transition from a static, compact formation into a more fluid, dynamic structure, with passing lanes beginning to open up as they look to release pressure.",
-    "fan_view": "They need a goal!",
+    "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City's defensive setup becomes more compact, with each player sitting a little deeper, cutting down passing lanes.",
+    "fan_view": "But the attack is starting to make their presence felt!",
     "multiaudience": {
       "en": {
-        "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City, now, is attempting to transition from a static, compact formation into a more fluid, dynamic structure, with passing lanes beginning to open up as they look to release pressure.",
-        "fan_view": "They need a goal!"
+        "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City's defensive setup becomes more compact, with each player sitting a little deeper, cutting down passing lanes.",
+        "fan_view": "But the attack is starting to make their presence felt!"
       },
       "fr": {
         "analyst_view": "À la 62e minute, le pressing haut de Meteor City retombe avec seulement 1 action défensive récente, permettant à Nova FC de se réorganiser (précision de passes de 57% sur la période). L'intensité du pressing adverse baisse, permettant de temporiser.",
@@ -135,7 +135,7 @@
       }
     },
     "cited_event_ids": [
-      "EVT-m_42-1193"
+      "EVT-m_42-1175"
     ],
     "language_used": "English",
     "target_persona": "General Fan",
@@ -149,11 +149,13 @@
       "def_actions": 1,
       "n_passes": 14
     },
-    "rejection_history": [],
+    "rejection_history": [
+      "Format Error: JSONDecodeError"
+    ],
     "is_fallback": false,
     "episode_seq": 3,
     "superseded": false,
-    "llm_latency_sec": 5.98,
+    "llm_latency_sec": 13.18,
     "completed_at_match_minute": 62,
     "render_status": "📡 ON-AIR (Director Approved)",
     "director_decision": "APPROVED_ON_AIR"
@@ -200,14 +202,14 @@
 ```json
 {
   "headline": "Full Time: Meteor City 2 - 0 Nova FC",
-  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). Aggressive High-Pressing Dominance",
+  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). aggressive dominance",
   "turning_point": {
     "minute": 57,
     "episode_id": "m_42_min57_ENTERED"
   },
   "key_episode_ids": [
-    "m_42_min51_GOAL_EVT-m_42-1037",
-    "m_42_min57_ENTERED"
+    "m_42_min57_ENTERED",
+    "m_42_min51_GOAL_EVT-m_42-1037"
   ],
   "agent_handoff_count": 4,
   "recap_verified": true

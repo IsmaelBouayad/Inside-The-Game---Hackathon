@@ -87,96 +87,66 @@ async def warmup_ollama(model_name: str = None):
 
 
 
-def coerce_color_payload(raw_text: str, trigger_ids: list, sanitize_numbers: bool = False) -> ColorCommentaryPayload:
-    """Normalizes common small-model JSON quirks (string vs list, key aliases) before Pydantic validation."""
+def coerce_color_payload(raw_text: str, trigger_ids: list) -> ColorCommentaryPayload:
+    """
+    Structural JSON normalizer ONLY (handles string-vs-list for cited_event_ids and key aliases).
+    Does NOT silently rewrite or strip forbidden numbers/words from the LLM text: all content
+    violations are strictly evaluated and rejected by verify_color_commentary().
+    """
     clean_str = extract_json(raw_text)
     data = json.loads(clean_str)
     if not isinstance(data, dict):
         raise ValueError("JSON root is not an object")
 
-    # 1. Key alias normalization
     analyst_color = (
         data.get("analyst_color")
         or data.get("analyst_view")
         or data.get("tactical_color")
         or data.get("commentary")
-        or "The collective block compresses space and disrupts short passing lanes."
     )
     fan_view = (
         data.get("fan_view")
         or data.get("supporter_view")
         or data.get("fan_reaction")
-        or "Relentless intensity on the pitch!"
     )
-    if isinstance(analyst_color, dict):
-        analyst_color = str(next(iter(analyst_color.values()), "The collective block compresses space."))
-    if isinstance(fan_view, dict):
-        fan_view = str(next(iter(fan_view.values()), "Huge intensity on the pitch!"))
+    if not isinstance(analyst_color, str) or not analyst_color.strip():
+        raise ValueError("Missing analyst_color string")
+    if not isinstance(fan_view, str) or not fan_view.strip():
+        raise ValueError("Missing fan_view string")
 
-    analyst_color = str(analyst_color).replace("...", ".").replace("…", ".").strip()
-    fan_view = str(fan_view).replace("...", "!").replace("…", "!").strip()
-
-    # 2. Coerce cited_event_ids to list[str]
     raw_ids = data.get("cited_event_ids") or data.get("event_ids") or data.get("key_episode_ids")
     if isinstance(raw_ids, str):
         cited_ids = [raw_ids]
     elif isinstance(raw_ids, list) and len(raw_ids) > 0:
         cited_ids = [str(x) for x in raw_ids]
     else:
-        cited_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
-
-    # If the model copied 'EVT-XXXX' or an invalid ID during live run, map to real trigger_id on retry
-    if sanitize_numbers and trigger_ids:
-        valid_set = set(trigger_ids)
-        cited_ids = [cid for cid in cited_ids if cid in valid_set] or [trigger_ids[0]]
-        analyst_color = re.sub(r"\d+%?", "", analyst_color)
-        analyst_color = re.sub(NUMBER_WORDS_REGEX, "several", analyst_color, flags=re.IGNORECASE)
-        fan_view = re.sub(r"\d+%?", "", fan_view)
-        fan_view = re.sub(NUMBER_WORDS_REGEX, "multiple", fan_view, flags=re.IGNORECASE)
-        for h in HALLUCINATION_TRIGGERS:
-            pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
-            analyst_color = re.sub(pattern, "tactical movement", analyst_color, flags=re.IGNORECASE)
-            fan_view = re.sub(pattern, "action", fan_view, flags=re.IGNORECASE)
-        analyst_color = re.sub(r"\s+", " ", analyst_color).strip()
-        fan_view = re.sub(r"\s+", " ", fan_view).strip()
+        raise ValueError("Missing cited_event_ids")
 
     return ColorCommentaryPayload(
-        analyst_color=analyst_color,
-        fan_view=fan_view,
+        analyst_color=analyst_color.strip(),
+        fan_view=fan_view.strip(),
         cited_event_ids=cited_ids
     )
 
 
 def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
-    """Normalizes small-model JSON output for RecapAgent."""
+    """Structural JSON normalizer for RecapAgent (no silent content rewriting)."""
     clean_str = extract_json(raw_text)
     data = json.loads(clean_str)
-    tc = (
-        data.get("tactical_color")
-        or data.get("tactical_summary")
-        or data.get("summary")
-        or "Collective spatial discipline across transition phases dictated the tempo."
-    )
-    tc = str(tc).replace("...", ".").replace("…", ".")
-    tc = re.sub(r"\d+%?", "", tc)
-    tc = re.sub(NUMBER_WORDS_REGEX, "sustained", tc, flags=re.IGNORECASE)
-    for h in HALLUCINATION_TRIGGERS:
-        pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
-        tc = re.sub(pattern, "phase", tc, flags=re.IGNORECASE)
-    tc = re.sub(r"\s+", " ", tc).strip()
+    tc = data.get("tactical_color") or data.get("tactical_summary") or data.get("summary")
+    if not isinstance(tc, str) or not tc.strip():
+        raise ValueError("Missing tactical_color string")
 
     raw_eps = data.get("key_episode_ids") or data.get("cited_event_ids")
-    valid_set = set(episode_ids)
     if isinstance(raw_eps, str):
-        raw_eps = [raw_eps]
-    if isinstance(raw_eps, list):
-        clean_eps = [str(x) for x in raw_eps if str(x) in valid_set]
+        clean_eps = [raw_eps]
+    elif isinstance(raw_eps, list) and len(raw_eps) > 0:
+        clean_eps = [str(x) for x in raw_eps]
     else:
-        clean_eps = []
-    if not clean_eps and episode_ids:
         clean_eps = episode_ids[:2]
 
-    return MatchRecapPayload(tactical_color=tc, key_episode_ids=clean_eps)
+    return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=clean_eps)
+
 
 def extract_json(text: str) -> str:
     text = text.strip()
@@ -309,12 +279,12 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
         errors.append(f"Role inversion: {alarm['team']} is the pressing aggressor, not scrambling on defense.")
 
     if status == "ENTERED":
-        if re.search(rf"\b{re.escape(victim)}\b\s+(?:presses|pressing|suffocates|hounds|destroys|dominates|locks|traps|exploits|attacking)", combined_lower):
+        if re.search(rf"\b{re.escape(victim)}\b\s+(?:presses|pressing|suffocates|hounds|destroys|dominates|locks|traps|exploits|attacking|presse|étouffe|harcèle|domine|accule)", combined_lower):
             errors.append(f"Role inversion: {alarm['victim']} cannot be described as the aggressor during ENTERED state.")
-        if re.search(rf"\b{re.escape(team)}\b.*(?:scrambling|all over the place|panics|collapses|struggling|pinned)", combined_lower):
+        if re.search(rf"\b{re.escape(team)}\b.*(?:scrambling|all over the place|panics|collapses|struggling|pinned|panique|subit|accule)", combined_lower):
             errors.append(f"Role inversion: {alarm['team']} is the pressing aggressor, not scrambling on defense.")
     elif status == "EXITED":
-        if re.search(rf"\b{re.escape(team)}\b\s+(?:escapes|breaks\s+the\s+press|breaks\s+free)", combined_lower):
+        if re.search(rf"\b{re.escape(team)}\b\s+(?:escapes|breaks\s+the\s+press|breaks\s+free|s'échappe|casse\s+le\s+pressing|sort\s+du\s+pressing)", combined_lower):
             errors.append(f"Role inversion: {alarm['team']} cannot be described as escaping the press during EXITED state.")
 
     return errors
@@ -515,7 +485,7 @@ Reply with ONLY valid JSON:
             res = await agent.run(prompt)
             duration = round(time.monotonic() - t0, 1)
 
-            payload_obj = coerce_color_payload(res.text, trigger_ids, sanitize_numbers=(attempts > 0))
+            payload_obj = coerce_color_payload(res.text, trigger_ids)
             errors = verify_color_commentary(payload_obj, alarm, valid_ids_set)
 
             if not errors:

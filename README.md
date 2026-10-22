@@ -66,7 +66,7 @@ Small local models frequently hallucinate numbers, invert team roles, or invent 
 4. **Incident & Micro-Action Guardrails:** Word-boundary regex assertions reject unrecorded match incidents (`red card`, `penalty`, `injury`, `offside`, `corner`) and untracked player-position claims (`winger`, `right-back`, `clever run`, `cross`, `header`).
 5. **Role-Inversion Guards:** Rejects outputs that describe the victim as the aggressor during `ENTERED` or the presser as escaping during `EXITED`.
 
-All **19 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
+All **21 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 stress tests + ISO-8601 timestamp validation above minute 59 + dynamic recap verification across Nova FC wins, draws, and no-press matches) run in `< 0.1s`.
 
 ---
 

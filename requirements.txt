@@ -1,7 +1,7 @@
-agent-framework>=1.21.0
-openai>=1.50.0
-pydantic>=2.9.0
-python-dotenv>=1.0.1
-azure-eventhub>=5.12.0
-streamlit>=1.39.0
-pytest>=8.3.0
+agent-framework==1.21.0
+openai==3.29.0
+pydantic==2.12.5
+python-dotenv==1.2.4
+azure-eventhub==5.15.1
+streamlit==1.65.0
+pandas==2.2.2

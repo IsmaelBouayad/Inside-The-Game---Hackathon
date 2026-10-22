@@ -1,13 +1,13 @@
 {
   "headline": "Full Time: Meteor City 2 - 0 Nova FC",
-  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). Aggressive High-Pressing Dominance",
+  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). aggressive dominance",
   "turning_point": {
     "minute": 57,
     "episode_id": "m_42_min57_ENTERED"
   },
   "key_episode_ids": [
-    "m_42_min51_GOAL_EVT-m_42-1037",
-    "m_42_min57_ENTERED"
+    "m_42_min57_ENTERED",
+    "m_42_min51_GOAL_EVT-m_42-1037"
   ],
   "agent_handoff_count": 4,
   "recap_verified": true
