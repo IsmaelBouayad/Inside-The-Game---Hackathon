@@ -1,6 +1,5 @@
-import json
 import os
-import asyncio
+import json
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -8,12 +7,14 @@ load_dotenv()
 
 FALLBACK_FILE = "fabric_local_fallback.jsonl"
 
+
 class FabricTelemetrySink:
     """
-    Connecteur hybride Microsoft Fabric Eventstream (via Azure Event Hubs SDK).
-    - Si EVENTHUB_CONNECTION_STRING est configuré dans .env : envoi réseau réel vers Fabric.
-    - Sinon : écriture locale dans fabric_local_fallback.jsonl (mode hors-ligne / CI).
+    Streams live match alarms, verified overlays, director audit events, and metrics
+    to Microsoft Fabric Eventstream (via Azure Event Hubs protocol), with automatic
+    local JSONL fallback when running offline or in CI.
     """
+
     def __init__(self):
         self.conn_str = os.environ.get("EVENTHUB_CONNECTION_STRING", "").strip()
         self.live_enabled = False
@@ -21,39 +22,36 @@ class FabricTelemetrySink:
         self.sent_live_count = 0
         self.local_fallback_count = 0
 
-        if self.conn_str and "Endpoint=sb://" in self.conn_str:
+        if self.conn_str and "Endpoint=sb://" in self.conn_str and "<namespace>" not in self.conn_str:
             try:
                 from azure.eventhub.aio import EventHubProducerClient
-                from azure.eventhub import EventData
-                self._EventData = EventData
-                self._producer = EventHubProducerClient.from_connection_string(self.conn_str)
+                self._producer = EventHubProducerClient.from_connection_string(conn_str=self.conn_str)
                 self.live_enabled = True
             except Exception as e:
-                print(f"⚠️ [FabricSink] SDK Azure EventHub non disponible ({e}), repli local activé.")
+                print(f"⚠️ [Fabric Sink] Azure EventHub SDK init fallback ({e})")
+                self.live_enabled = False
 
     async def ingest_record(self, record_type: str, payload: dict) -> str:
-        record = {
-            "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
+        envelope = {
             "record_type": record_type,
-            "delivery_mode": "fabric_eventstream_live" if self.live_enabled else "local_jsonl_fallback",
-            "data": payload
+            "ingested_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "payload": payload
         }
-
         if self.live_enabled and self._producer is not None:
             try:
+                from azure.eventhub import EventData
                 batch = await self._producer.create_batch()
-                batch.add(self._EventData(json.dumps(record, ensure_ascii=False)))
+                batch.add(EventData(json.dumps(envelope, ensure_ascii=False)))
                 await self._producer.send_batch(batch)
                 self.sent_live_count += 1
                 return "fabric_eventstream_live"
             except Exception as e:
-                record["delivery_mode"] = f"local_fallback_after_error ({type(e).__name__})"
+                print(f"⚠️ [Fabric Sink] Live send fallback to local JSONL ({e})")
 
         self.local_fallback_count += 1
         with open(FALLBACK_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        await asyncio.sleep(0)
-        return record["delivery_mode"]
+            f.write(json.dumps(envelope, ensure_ascii=False) + "\n")
+        return "local_jsonl_fallback"
 
     async def close(self):
         if self._producer is not None:

@@ -481,15 +481,19 @@ def log_director_decision(episode_id: str, decision: str):
             with open(UI_FILE, "a", encoding="utf-8") as uf:
                 uf.write(json.dumps(updated, ensure_ascii=False) + "\n")
             break
-    try:
-        sink = FabricTelemetrySink()
+    import threading
+    def _send_audit_bg(rec):
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(sink.ingest_record("DIRECTOR_AUDIT", record))
-        except RuntimeError:
-            asyncio.run(sink.ingest_record("DIRECTOR_AUDIT", record))
-    except Exception:
-        pass
+            async def _runner():
+                sink = FabricTelemetrySink()
+                try:
+                    await asyncio.wait_for(sink.ingest_record("DIRECTOR_AUDIT", rec), timeout=4.0)
+                finally:
+                    await sink.close()
+            asyncio.run(_runner())
+        except Exception:
+            pass
+    threading.Thread(target=_send_audit_bg, args=(record,), daemon=True).start()
 
 
 def split_fact_and_color(text: str) -> tuple[str, str]:

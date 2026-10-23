@@ -1,13 +1,12 @@
 import asyncio
 import json
 import os
-import statistics
+import sys
 import time
-import argparse
-from collections import deque
-from datetime import datetime
-
+import statistics
+from datetime import datetime, timezone
 from detector import OnlineShiftDetector
+from generator import generate_match
 from pipeline import (
     generate_episode_narrative,
     generate_fallback_overlay,
@@ -17,53 +16,72 @@ from pipeline import (
 )
 from fabric_sink import FabricTelemetrySink
 
-# CONFIGURATION
-SPEED = float(os.environ.get("MATCH_SPEED", 60))
-TACTICAL_SLOWDOWN_SPEED = float(os.environ.get("TACTICAL_SPEED", 2.0))
-DYNAMIC_PACING = os.environ.get("DYNAMIC_PACING", "1") == "1"
-LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", 45))
-EVENTS_FILE = os.environ.get("EVENTS_FILE", "match_events.jsonl")
-LANGUAGE = os.environ.get("BROADCAST_LANG", "English")
-PERSONA = os.environ.get("BROADCAST_PERSONA", "General Fan")
-
 UI_FILE = "broadcast_ui.jsonl"
 CLOCK_FILE = "match_clock.json"
 METRICS_FILE = "engine_metrics.json"
 RECAP_FILE = "match_recap.json"
-QUEUE_SIZE = 2
 
-pending_fabric_tasks: set = set()
+BROADCAST_LANG = os.environ.get("BROADCAST_LANG", "English")
+BROADCAST_PERSONA = os.environ.get("BROADCAST_PERSONA", "General Fan")
 
 
-def append_to_ui(data: dict) -> None:
+def template_overlay(alarm, episode_key, seq_id, status_label):
+    fb = generate_fallback_overlay(alarm, episode_key, language=BROADCAST_LANG, persona=BROADCAST_PERSONA)
+    fb["episode_seq"] = seq_id
+    fb["render_status"] = status_label
+    return fb
+
+
+def append_to_ui(payload):
     with open(UI_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(data, ensure_ascii=False) + "\n")
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def update_clock(minute: int, score: dict, state: str, current_speed: float, momentum_history: list, peak_swing: dict) -> None:
+def event_clock_sec(ev: dict) -> int:
+    if "second" in ev:
+        return int(ev["minute"]) * 60 + int(ev["second"])
+    ts = str(ev.get("timestamp", ""))
+    if len(ts) >= 19 and ts[17:19].isdigit():
+        return int(ev["minute"]) * 60 + int(ts[17:19])
+    return int(ev["minute"]) * 60
+
+
+def update_clock(minute, score, tactical_state, current_speed, momentum_history=None, peak_swing=None):
+    data = {
+        "minute": minute,
+        "score": score,
+        "tactical_state": tactical_state,
+        "current_speed": current_speed,
+        "momentum_history": (momentum_history or [])[-30:],
+        "peak_swing": peak_swing or {},
+        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    }
     with open(CLOCK_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "minute": minute,
-            "score": score,
-            "tactical_state": state,
-            "current_speed": current_speed,
-            "momentum_history": momentum_history[-30:],
-            "peak_swing": peak_swing
-        }, f)
+        json.dump(data, f)
 
 
 class Metrics:
     def __init__(self):
-        self.events = self.alarms = self.goals = self.dropped = 0
-        self.llm_ok = self.rejected_fallback = self.timeouts = self.errors = 0
+        self.events = 0
+        self.alarms = 0
+        self.goals = 0
+        self.dropped = 0
+        self.llm_ok = 0
+        self.rejected_fallback = 0
+        self.timeouts = 0
+        self.errors = 0
         self.superseded_finals = 0
         self.fabric_mode = "local_jsonl_fallback"
-        self.latencies: list[float] = []
+        self.fabric_sent = 0
+        self.fabric_fallbacks = 0
+        self.latencies = []
 
     def dump(self, fabric=None):
         if fabric is not None:
-            self.fabric_sent = fabric.sent_live_count
-            self.fabric_fallbacks = fabric.local_fallback_count
+            self.fabric_sent = getattr(fabric, "sent_live_count", 0)
+            self.fabric_fallbacks = getattr(fabric, "local_fallback_count", 0)
+            if getattr(fabric, "live_enabled", False):
+                self.fabric_mode = "fabric_eventstream_live"
         lat = self.latencies
         data = {
             "events": self.events,
@@ -76,95 +94,69 @@ class Metrics:
             "errors": self.errors,
             "superseded_finals": self.superseded_finals,
             "fabric_delivery_mode": self.fabric_mode,
-            "fabric_live_sends_succeeded": getattr(self, "fabric_sent", 0),
-            "fabric_local_fallbacks": getattr(self, "fabric_fallbacks", 0),
+            "fabric_live_sends_succeeded": self.fabric_sent,
+            "fabric_local_fallbacks": self.fabric_fallbacks,
             "llm_latency_sec_median": round(statistics.median(lat), 2) if lat else None,
             "llm_latency_sec_max": round(max(lat), 2) if lat else None,
-            "last_updated_utc": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            "last_updated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         }
         with open(METRICS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         return data
 
 
-def schedule_fabric_send(fabric: FabricTelemetrySink, record_type: str, payload: dict):
-    """Envoi Fabric non-bloquant suivi dans pending_fabric_tasks pour garantir la livraison finale."""
-    async def _send():
-        try:
-            await asyncio.wait_for(fabric.ingest_record(record_type, payload), timeout=5.0)
-        except Exception:
-            pass
-    task = asyncio.create_task(_send())
-    pending_fabric_tasks.add(task)
-    task.add_done_callback(pending_fabric_tasks.discard)
-
-
-def template_overlay(alarm: dict, key: str, seq: int, status: str, reason: str = "", latency=None) -> dict:
-    o = generate_fallback_overlay(alarm, key, language=LANGUAGE, persona=PERSONA)
-    o["episode_seq"] = seq
-    o["render_status"] = status
-    if reason:
-        o["reason"] = reason
-    if latency is not None:
-        o["llm_latency_sec"] = latency
-    return o
-
-
-async def llm_worker(
-    queue: asyncio.Queue,
-    match_id: str,
-    llm,
-    metrics: Metrics,
-    llm_timeout: float,
-    fabric: FabricTelemetrySink,
-    state_tracker: dict,
-    verified_overlays: list
-):
+async def llm_worker(queue, match_id, llm_fn, metrics, timeout_s, fabric: FabricTelemetrySink, state_tracker: dict, verified_overlays: list):
     while True:
-        seq, alarm, raw_events = await queue.get()
+        seq_id, alarm, context_events = await queue.get()
         state_tracker["worker_busy"] = True
-        key = f"{match_id}_min{alarm['minute']}_{alarm['status']}"
+        ep_key = f"{match_id}_min{alarm['minute']}_{alarm.get('status', 'ENTERED')}"
         t0 = time.monotonic()
         try:
             out = await asyncio.wait_for(
-                llm(match_id, alarm, raw_events, force_live=True, language=LANGUAGE, persona=PERSONA),
-                timeout=llm_timeout
+                llm_fn(match_id, alarm, context_events, force_live=True, language=BROADCAST_LANG, persona=BROADCAST_PERSONA),
+                timeout=timeout_s
             )
-            latency = round(time.monotonic() - t0, 2)
-            is_superseded = seq < state_tracker["latest_seq"]
+            dt = round(time.monotonic() - t0, 2)
+            out["episode_seq"] = seq_id
+            is_superseded = seq_id < state_tracker["latest_seq"]
+            out["superseded"] = is_superseded
 
-            if out and not out.get("is_fallback"):
-                out["episode_seq"] = seq
-                out["superseded"] = is_superseded
-                out["llm_latency_sec"] = latency
-                out["completed_at_match_minute"] = state_tracker["current_minute"]
-                out["render_status"] = "FINAL (AI Verified - Historical / Superseded)" if is_superseded else "FINAL (AI Verified)"
-                metrics.llm_ok += 1
-                metrics.latencies.append(latency)
-                verified_overlays.append(out)
-            else:
-                out = template_overlay(alarm, key, seq, "FINAL (Template - LLM Output Rejected)", latency=latency)
-                out["superseded"] = is_superseded
+            if out.get("is_fallback"):
                 metrics.rejected_fallback += 1
+                out["render_status"] = "FINAL (Template - LLM Output Rejected)"
+                out["llm_latency_sec"] = dt
                 verified_overlays.append(out)
+                print(f"   ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
+            else:
+                metrics.llm_ok += 1
+                metrics.latencies.append(dt)
+                out["llm_latency_sec"] = dt
+                out["completed_at_match_minute"] = state_tracker["current_minute"]
+                if is_superseded:
+                    metrics.superseded_finals += 1
+                    out["render_status"] = "FINAL (AI Verified - Historical / Superseded)"
+                else:
+                    out["render_status"] = "FINAL (AI Verified)"
+                verified_overlays.append(out)
+                print(f"   ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
 
             append_to_ui(out)
-            schedule_fabric_send(fabric, "OVERLAY_FINAL", out)
-            print(f"   ✅ [Worker] {out['render_status']} en {latency}s ({key})")
+            await fabric.ingest_record("OVERLAY_FINAL", out)
 
         except asyncio.TimeoutError:
             metrics.timeouts += 1
-            latency = round(time.monotonic() - t0, 2)
-            fb = template_overlay(alarm, key, seq, "FINAL (Template - LLM Timeout)",
-                                  reason=f"Timeout {llm_timeout}s", latency=latency)
-            fb["superseded"] = seq < state_tracker["latest_seq"]
+            fb = template_overlay(alarm, ep_key, seq_id, "FINAL (Template - LLM Timeout)")
+            fb["llm_latency_sec"] = round(time.monotonic() - t0, 2)
             verified_overlays.append(fb)
             append_to_ui(fb)
-            schedule_fabric_send(fabric, "OVERLAY_TIMEOUT", fb)
-            print(f"   ⏱️ [Worker] TIMEOUT après {llm_timeout}s ({key}) - Gabarit conservé")
+            await fabric.ingest_record("OVERLAY_TIMEOUT", fb)
+            print(f"   ⚠️ [Worker] Timeout LLM ({timeout_s}s) -> gabarit conservé ({ep_key})")
+        except asyncio.CancelledError:
+            queue.task_done()
+            raise
         except Exception as e:
             metrics.errors += 1
-            err = template_overlay(alarm, key, seq, "FINAL (Template - LLM Error)", reason=type(e).__name__)
+            err = template_overlay(alarm, ep_key, seq_id, f"FINAL (Template - {type(e).__name__})")
             verified_overlays.append(err)
             append_to_ui(err)
             print(f"   ❌ [Worker] {type(e).__name__}: {e}")
@@ -174,80 +166,108 @@ async def llm_worker(
             queue.task_done()
 
 
-async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, start_minute: int = 0, llm=None,
-                       llm_timeout: float = LLM_TIMEOUT):
-    llm = llm or generate_episode_narrative
+async def match_engine(
+    events_file="match_events.jsonl",
+    speed=None,
+    llm_fn=generate_episode_narrative,
+    llm_timeout=None,
+    start_minute=None
+):
+    speed = float(speed or os.environ.get("MATCH_SPEED", 60.0))
+    tactical_speed = float(os.environ.get("TACTICAL_SPEED", 2.0))
+    dynamic_pacing = os.environ.get("DYNAMIC_PACING", "1") == "1"
+    llm_timeout = float(llm_timeout or os.environ.get("LLM_TIMEOUT", 45.0))
+    start_min = int(start_minute if start_minute is not None else os.environ.get("START_MINUTE", 0))
+
+    # Auto-generate Seed 42 match_events.jsonl if absent (e.g. fresh clone or Docker mount)
     if not os.path.exists(events_file):
-        print(f"❌ {events_file} introuvable. Lancez 'python3 generator.py --seed 42' d'abord.")
-        return
+        print(f"📦 [Init] Generating deterministic Seed 42 telemetry into '{events_file}'...")
+        generate_match(42, "m_42", events_file, "ground_truth.json")
 
     for f_path in (UI_FILE, CLOCK_FILE, RECAP_FILE, METRICS_FILE):
         if os.path.exists(f_path):
             os.remove(f_path)
 
-    await warmup_ollama()
-
-    with open(events_file, "r", encoding="utf-8") as f:
-        events = [json.loads(line) for line in f]
-
-    match_id = events[0]["event_id"].split("-")[1]
     detector = OnlineShiftDetector()
-
-    # Pré-alimentation causale du détecteur si start_minute > 0 pour garder l'historique exact du Momentum
-    score = {"Meteor City": 0, "Nova FC": 0}
-    for e in events:
-        if e["minute"] < start_minute:
-            detector.process_event(e)
-            if e.get("event_type") == "Shot" and e.get("outcome") == "Goal":
-                score[e["team"]] += 1
-
-    filtered_events = [e for e in events if e["minute"] >= start_minute]
-    print(f"⚽ Match {match_id}: {len(filtered_events)} événements (min {start_minute}..89), vitesse base x{speed}, ralenti tactique={'ON' if DYNAMIC_PACING else 'OFF'}")
-
     metrics = Metrics()
     fabric = FabricTelemetrySink()
     metrics.fabric_mode = "fabric_eventstream_live" if fabric.live_enabled else "local_jsonl_fallback"
-    queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_SIZE)
+    metrics.dump(fabric)
 
-    state_tracker = {"latest_seq": 0, "current_minute": start_minute, "worker_busy": False}
+    queue = asyncio.Queue(maxsize=2)
+    state_tracker = {"latest_seq": 0, "current_minute": start_min, "worker_busy": False}
     verified_overlays = []
+    pending_fabric_tasks = set()
+
+    def schedule_fabric_send(record_type: str, payload: dict):
+        t = asyncio.create_task(fabric.ingest_record(record_type, payload))
+        pending_fabric_tasks.add(t)
+        def _on_done(task):
+            pending_fabric_tasks.discard(task)
+            metrics.dump(fabric)
+        t.add_done_callback(_on_done)
+
+    await warmup_ollama()
+
+    with open(events_file, "r", encoding="utf-8") as f:
+        all_events = [json.loads(line) for line in f if line.strip()]
+
+    if not all_events:
+        return
+
+    match_id = all_events[0].get("match_id", "m_42")
+    score = {"Meteor City": 0, "Nova FC": 0}
+
+    if start_min > 0:
+        pre_events = [e for e in all_events if e["minute"] < start_min]
+        events = [e for e in all_events if e["minute"] >= start_min]
+        for pe in pre_events:
+            if pe.get("event_type") == "Shot" and pe.get("outcome") == "Goal":
+                score[pe["team"]] = score.get(pe["team"], 0) + 1
+            detector.process_event(pe)
+    else:
+        events = all_events
 
     worker = asyncio.create_task(
-        llm_worker(queue, match_id, llm, metrics, llm_timeout, fabric, state_tracker, verified_overlays)
+        llm_worker(queue, match_id, llm_fn, metrics, llm_timeout, fabric, state_tracker, verified_overlays)
     )
-    recent: deque = deque(maxlen=150)
-    last_ts = None
-    last_clock_min = -1
+    print(f"⚽ Match {match_id}: {len(events)} événements (min {start_min}..90), vitesse base x{speed}, ralenti tactique={'ON' if dynamic_pacing else 'OFF'}")
+
+    prev_clock = event_clock_sec(events[0])
+    last_printed_min = -1
 
     try:
-        for event in filtered_events:
-            ts = datetime.fromisoformat(event["timestamp"])
-            active_speed = TACTICAL_SLOWDOWN_SPEED if (DYNAMIC_PACING and (state_tracker["worker_busy"] or not queue.empty())) else speed
+        for event in events:
+            now_clock = event_clock_sec(event)
+            dt = max(0, now_clock - prev_clock)
+            prev_clock = now_clock
 
-            if last_ts is not None and active_speed > 0:
-                await asyncio.sleep(max(0.0, (ts - last_ts).total_seconds()) / active_speed)
-            last_ts = ts
+            is_slow = dynamic_pacing and (state_tracker["worker_busy"] or not queue.empty())
+            active_speed = min(speed, tactical_speed) if is_slow else speed
+
+            if dt > 0 and active_speed > 0:
+                await asyncio.sleep(dt / active_speed)
 
             metrics.events += 1
-            recent.append(event)
             state_tracker["current_minute"] = event["minute"]
 
             if event.get("event_type") == "Shot" and event.get("outcome") == "Goal":
-                score[event["team"]] += 1
+                scorer = event["team"]
+                score[scorer] = score.get(scorer, 0) + 1
                 metrics.goals += 1
                 state_tracker["latest_seq"] += 1
-                goal_ov = generate_goal_overlay(event, score, match_id, language=LANGUAGE)
+                goal_ov = generate_goal_overlay(event, score, match_id, language=BROADCAST_LANG)
                 goal_ov["episode_seq"] = state_tracker["latest_seq"]
                 append_to_ui(goal_ov)
                 verified_overlays.append(goal_ov)
-                schedule_fabric_send(fabric, "GOAL_TIER0", goal_ov)
+                schedule_fabric_send("GOAL_TIER0", goal_ov)
                 metrics.dump(fabric)
-                print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {event['team']} ({score})")
+                print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {scorer} ({score})")
 
             alarm = detector.process_event(event)
 
-            if event["minute"] != last_clock_min:
-                last_clock_min = event["minute"]
+            if event["minute"] != last_printed_min:
+                last_printed_min = event["minute"]
                 update_clock(
                     event["minute"], score, detector.state, active_speed,
                     detector.momentum_history, detector.peak_swing
@@ -257,63 +277,61 @@ async def match_engine(events_file: str = EVENTS_FILE, speed: float = SPEED, sta
             if alarm:
                 metrics.alarms += 1
                 state_tracker["latest_seq"] += 1
-                seq = state_tracker["latest_seq"]
-                key = f"{match_id}_min{alarm['minute']}_{alarm['status']}"
-                reason_tag = f" [reason={alarm.get('exit_reason')}]" if alarm.get("exit_reason") else ""
-                print(f"\n🚨 [DÉTECTEUR] {alarm['status']}{reason_tag} minute {alarm['minute']} ({alarm['team']} vs {alarm['victim']})")
+                seq_id = state_tracker["latest_seq"]
+                alarm["episode_seq"] = seq_id
+                alarm["timestamp"] = event.get("timestamp", "")
 
-                draft = template_overlay(alarm, key, seq, "DRAFT (Live)")
+                ep_key = f"{match_id}_min{alarm['minute']}_{alarm.get('status', 'ENTERED')}"
+                reason_str = f" [reason={alarm.get('exit_reason')}]" if alarm.get("exit_reason") else ""
+                print(f"\n🚨 [DÉTECTEUR] {alarm['status']}{reason_str} minute {alarm['minute']} ({alarm['team']} vs {alarm['victim']})")
+
+                draft = template_overlay(alarm, ep_key, seq_id, "DRAFT (Live)")
                 append_to_ui(draft)
-                schedule_fabric_send(fabric, "ALARM", alarm)
+                schedule_fabric_send("ALARM", alarm)
                 metrics.dump(fabric)
 
-                job = (seq, alarm, list(recent))
                 if queue.full():
-                    queue.get_nowait()
-                    queue.task_done()
-                    metrics.dropped += 1
-                queue.put_nowait(job)
-
-            await asyncio.sleep(0)
+                    try:
+                        queue.get_nowait()
+                        queue.task_done()
+                        metrics.dropped += 1
+                    except asyncio.QueueEmpty:
+                        pass
+                queue.put_nowait((seq_id, alarm, list(detector.buffer)))
 
         print("\n🏁 Coup de sifflet final du match.")
         if not detector.momentum_history or detector.momentum_history[-1]["minute"] < 90:
             detector.compute_momentum(90)
         update_clock(90, score, "Full Time", 0.0, detector.momentum_history, detector.peak_swing)
-        try:
-            await asyncio.wait_for(queue.join(), timeout=llm_timeout * (QUEUE_SIZE + 1))
-        except asyncio.TimeoutError:
-            print("   ⚠️ Abandon de l'attente des jobs résiduels.")
+        await queue.join()
 
         print("📝 [RecapAgent] Génération du résumé tactique et Turning Point de fin de match...")
         recap = await generate_match_recap(
             match_id, verified_overlays, score,
-            peak_swing=detector.peak_swing, language=LANGUAGE
+            peak_swing=detector.peak_swing, language=BROADCAST_LANG
         )
-        with open(RECAP_FILE, "w", encoding="utf-8") as f:
-            json.dump(recap, f, indent=2, ensure_ascii=False)
+        with open(RECAP_FILE, "w", encoding="utf-8") as rf:
+            json.dump(recap, rf, indent=2, ensure_ascii=False)
 
-        metrics.fabric_sent = fabric.sent_live_count
-        metrics.fabric_fallbacks = fabric.local_fallback_count
-        if fabric.sent_live_count == 0 and not fabric.live_enabled:
-            metrics.fabric_mode = 'local_jsonl_fallback'
         if pending_fabric_tasks:
             await asyncio.gather(*pending_fabric_tasks, return_exceptions=True)
+
         await fabric.ingest_record("POST_MATCH_RECAP", recap)
         final_metrics = metrics.dump(fabric)
         await fabric.ingest_record("MATCH_METRICS", final_metrics)
+        final_metrics = metrics.dump(fabric)
 
     finally:
         worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
         await fabric.close()
-
-    print("🎬 Moteur terminé. Métriques :", json.dumps(final_metrics, indent=2))
+        print(f"🎬 Moteur terminé. Métriques : {json.dumps(metrics.dump(fabric), indent=2)}")
 
 
 if __name__ == "__main__":
-    import logging
-    logging.getLogger("agent_framework").setLevel(logging.ERROR)
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--start-minute", type=int, default=0, help="Minute de départ pour vidéo accélérée (<2 min)")
-    args = parser.parse_args()
-    asyncio.run(match_engine(start_minute=args.start_minute))
+    start_m = None
+    if "--start-minute" in sys.argv:
+        idx = sys.argv.index("--start-minute")
+        if idx + 1 < len(sys.argv):
+            start_m = int(sys.argv[idx + 1])
+    asyncio.run(match_engine(start_minute=start_m))

@@ -52,7 +52,7 @@ match_events.jsonl ──► engine.py (Async Simulated Clock + Dynamic Tactical
 ### Handling Edge CPU Latency, Sequence Tracking & Valid ISO-8601 Timestamps
 1. **Dynamic Tactical Pacing (`DYNAMIC_PACING=1`):** On a CPU-only laptop, local LLM inference takes ~9–14s. During fast-forward demos (`x60`), `engine.py` automatically slows replay to `x2` while the LLM worker is active so the verified `FINAL` overlay lands within the same tactical sequence.
 2. **In-Place Sequence Upgrade (`episode_seq`):** Every episode is tracked by `episode_seq` and `episode_id`. When `llm_worker` completes verification, it writes `FINAL (AI Verified)` to `broadcast_ui.jsonl`, which `app.py` (`load_episodes()`) merges in-place over the `DRAFT` of the same `episode_id`. If a newer alarm has already fired, the older completion is marked `superseded: True` so it never overwrites a newer banner.
-3. **Strict ISO-8601 Clock Arithmetic (`format_match_timestamp`):** Match minutes above 59 (e.g., minute `62`) are computed via `MATCH_KICKOFF + timedelta(minutes=minute)` (`2026-10-27T16:02:00Z`), guaranteeing strictly valid ISO-8601 timestamps across all overlays and Microsoft Fabric KQL ingestion.
+3. **Strict ISO-8601 Clock Arithmetic (`format_match_timestamp`):** Match minutes above 59 (e.g., minute `62`) are computed via `MATCH_KICKOFF + timedelta(minutes=minute)` (`2026-10-27T21:02:00Z`), guaranteeing strictly valid ISO-8601 timestamps across all overlays and Microsoft Fabric KQL ingestion.
 
 ---
 
@@ -87,7 +87,7 @@ All **21 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 str
 | Model & Language Configuration | Pass@1 (First Try) | Pass@2 (After Rejection Retry) | Template Fallbacks | Median Latency (CPU) | Min / Max Latency |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Microsoft Phi-4-mini (English)** | `60.0%` (12/20) *(39–78%)* | **`100.0%` (20/20)** *(84–100%)* | `0 / 20` | `13.67s` | `7.19s / 24.79s` |
-| **Meta Llama 3.2 (English)** | `80.0%` (16/20) *(58–92%)* | **`90.0%` (18/20)** *(70–97%)* | `2 / 20` | `9.21s` | `6.63s / 28.95s` |
+| **Meta Llama 3.2 (English)** | `80.0%` (21/20) *(58–92%)* | **`90.0%` (18/20)** *(70–97%)* | `2 / 20` | `9.21s` | `6.63s / 28.95s` |
 | **Meta Llama 3.2 (French)** | `50.0%` (10/20) *(30–70%)* | **`75.0%` (15/20)** *(53–89%)* | `5 / 20` | `12.25s` | `6.24s / 23.71s` |
 
 *Key Finding:* Feeding the exact programmatic rejection reason back into the retry prompt raises **Microsoft Phi-4-mini** from `60.0%` Pass@1 to **`100.0%` Pass@2** (`20/20` verified, `0` fallbacks).
@@ -96,7 +96,7 @@ All **21 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 str
 - **Ground Truth (`ground_truth.json`):** `shift_type: "High Press"`, `shift_team: "Meteor City"`, `true_minute: 52`, `end_minute: 64`. Final Score: `Meteor City 2 - 0 Nova FC` (Goals at minutes `51` and `79`).
 - **Alarms Fired & Verified Overlays:**
   - `min 57 ENTERED` -> Verified in `15.01s` (`timestamp: "2026-10-27T15:57:00Z"`)
-  - `min 62 EXITED [reason=exhausted]` -> Verified in `10.10s` (`timestamp: "2026-10-27T16:02:00Z"`)
+  - `min 62 EXITED [reason=exhausted]` -> Verified in `10.10s` (`timestamp: "2026-10-27T21:02:00Z"`)
 - **Median Latency:** `12.55s` | **Superseded Finals:** `0` | **Fabric Delivery Mode:** `fabric_eventstream_live`
 
 ---

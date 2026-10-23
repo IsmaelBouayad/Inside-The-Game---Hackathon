@@ -1,17 +1,17 @@
 {
-  "events": 916,
+  "events": 856,
   "alarms": 2,
   "goals_narrated_tier0": 2,
   "dropped_jobs": 0,
-  "llm_verified": 1,
-  "fallback_after_rejection": 1,
+  "llm_verified": 2,
+  "fallback_after_rejection": 0,
   "timeouts": 0,
   "errors": 0,
   "superseded_finals": 0,
   "fabric_delivery_mode": "fabric_eventstream_live",
-  "fabric_live_sends_succeeded": 7,
+  "fabric_live_sends_succeeded": 8,
   "fabric_local_fallbacks": 0,
-  "llm_latency_sec_median": 11.62,
-  "llm_latency_sec_max": 11.62,
-  "last_updated_utc": "2026-10-22T12:46:27Z"
+  "llm_latency_sec_median": 12.64,
+  "llm_latency_sec_max": 14.58,
+  "last_updated_utc": "2026-10-23T11:53:54Z"
 }

@@ -9,7 +9,7 @@ TUNING_SEEDS = range(1, 121)
 TEST_SEEDS = range(1001, 1201)
 
 def run_benchmark():
-    print(f"🔬 Detector v4 Benchmark: Tuned on {len(TUNING_SEEDS)} seeds (1..120), evaluated on {len(TEST_SEEDS)} held-out seeds (1001..1200)...")
+    print(f"🔬 Detector v5.2 Benchmark: Tuned on {len(TUNING_SEEDS)} seeds (1..120), evaluated on {len(TEST_SEEDS)} held-out seeds (1001..1200)...")
     total_matches = len(TEST_SEEDS)
     press_matches = 0
     control_matches = 0

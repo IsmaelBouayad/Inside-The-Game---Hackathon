@@ -11,16 +11,25 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama-pull:
+    image: ollama/ollama:latest
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["ollama", "pull", "llama3.2"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   control-room-ui:
     build: .
     ports:
       - "8501:8501"
     volumes:
-      - ./shared_state:/app/shared_state
       - ./:/app
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434/v1
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2} - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
     depends_on:
       ollama:
         condition: service_healthy
@@ -29,14 +38,14 @@ services:
     build: .
     command: ["python3", "engine.py", "--start-minute", "48"]
     volumes:
-      - ./shared_state:/app/shared_state
       - ./:/app
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434/v1
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2} - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - EVENTHUB_CONNECTION_STRING=${EVENTHUB_CONNECTION_STRING:-}
     depends_on:
-      ollama:
-        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
       control-room-ui:
         condition: service_started
 
