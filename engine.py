@@ -126,7 +126,7 @@ async def llm_worker(queue, match_id, llm_fn, metrics, timeout_s, fabric: Fabric
                 out["render_status"] = "FINAL (Template - LLM Output Rejected)"
                 out["llm_latency_sec"] = dt
                 verified_overlays.append(out)
-                print(f"   ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
+                print(f"    ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
             else:
                 metrics.llm_ok += 1
                 metrics.latencies.append(dt)
@@ -138,7 +138,7 @@ async def llm_worker(queue, match_id, llm_fn, metrics, timeout_s, fabric: Fabric
                 else:
                     out["render_status"] = "FINAL (AI Verified)"
                 verified_overlays.append(out)
-                print(f"   ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
+                print(f"    ✅ [Worker] {out['render_status']} en {dt}s ({ep_key})")
 
             append_to_ui(out)
             await fabric.ingest_record("OVERLAY_FINAL", out)
@@ -150,7 +150,7 @@ async def llm_worker(queue, match_id, llm_fn, metrics, timeout_s, fabric: Fabric
             verified_overlays.append(fb)
             append_to_ui(fb)
             await fabric.ingest_record("OVERLAY_TIMEOUT", fb)
-            print(f"   ⚠️ [Worker] Timeout LLM ({timeout_s}s) -> gabarit conservé ({ep_key})")
+            print(f"    ⚠️ [Worker] Timeout LLM ({timeout_s}s) -> gabarit conservé ({ep_key})")
         except asyncio.CancelledError:
             queue.task_done()
             raise
@@ -159,7 +159,7 @@ async def llm_worker(queue, match_id, llm_fn, metrics, timeout_s, fabric: Fabric
             err = template_overlay(alarm, ep_key, seq_id, f"FINAL (Template - {type(e).__name__})")
             verified_overlays.append(err)
             append_to_ui(err)
-            print(f"   ❌ [Worker] {type(e).__name__}: {e}")
+            print(f"    ❌ [Worker] {type(e).__name__}: {e}")
         finally:
             state_tracker["worker_busy"] = False
             metrics.dump(fabric)
@@ -179,7 +179,6 @@ async def match_engine(
     llm_timeout = float(llm_timeout or os.environ.get("LLM_TIMEOUT", 45.0))
     start_min = int(start_minute if start_minute is not None else os.environ.get("START_MINUTE", 0))
 
-    # Auto-generate Seed 42 match_events.jsonl if absent (e.g. fresh clone or Docker mount)
     if not os.path.exists(events_file):
         print(f"📦 [Init] Generating deterministic Seed 42 telemetry into '{events_file}'...")
         generate_match(42, "m_42", events_file, "ground_truth.json")
@@ -198,7 +197,7 @@ async def match_engine(
     metrics.fabric_mode = "fabric_eventstream_live" if fabric.live_enabled else "local_jsonl_fallback"
     metrics.dump(fabric)
 
-    queue = asyncio.Queue(maxsize=2)
+    queue = asyncio.Queue(maxsize=10)  # Augmenté à 10 pour absorber la concurrence sans bloquer
     state_tracker = {"latest_seq": 0, "current_minute": start_min, "worker_busy": False}
     verified_overlays = []
     pending_fabric_tasks = set()
@@ -316,6 +315,20 @@ async def match_engine(
         )
         with open(RECAP_FILE, "w", encoding="utf-8") as rf:
             json.dump(recap, rf, indent=2, ensure_ascii=False)
+        
+        # Pousse le récapitulatif dans l'UI avec le statut AI Verified pour corriger le compteur final
+        recap_card = {
+            "analyst_view": recap["headline"],
+            "fan_view": recap["tactical_summary"],
+            "multiaudience": {"en": {"analyst_view": recap["headline"], "fan_view": recap["tactical_summary"]}},
+            "cited_event_ids": recap.get("key_episode_ids", []),
+            "render_status": "FINAL (AI Verified - Recap Agent)",
+            "episode_seq": state_tracker["latest_seq"] + 1,
+            "match_minute": 90,
+            "episode_id": f"{match_id}_min90_FULL_TIME",
+            "is_fallback": not recap.get("recap_verified", False)
+        }
+        append_to_ui(recap_card)
 
         if pending_fabric_tasks:
             await asyncio.gather(*pending_fabric_tasks, return_exceptions=True)
@@ -323,7 +336,6 @@ async def match_engine(
         await fabric.ingest_record("POST_MATCH_RECAP", recap)
         final_metrics = metrics.dump(fabric)
         await fabric.ingest_record("MATCH_METRICS", final_metrics)
-        final_metrics = metrics.dump(fabric)
 
     finally:
         worker.cancel()

@@ -12,6 +12,7 @@ from pipeline import (
     build_recap_factual_core,
     format_match_timestamp,
     generate_fallback_overlay,
+    build_multiaudience_views,
 )
 
 SAMPLE_ALARM_ENTERED = {
@@ -298,3 +299,75 @@ if __name__ == "__main__":
         t()
         print(f"✅ PASS: {t.__name__}")
     print(f"\n🎯 All {len(all_tests)}/{len(all_tests)} Verifier v5.2 + Worker-to-UI + Recap tests passed flawlessly!")
+    
+    
+def test_22_reject_exited_pressing_intensity_words():
+    """Vérifie l'interdiction stricte du vocabulaire d'agression/intensité lors d'une sortie de pressing (EXITED)."""
+    alarm_exited = {
+        "minute": 62,
+        "team": "Meteor City",
+        "victim": "Nova FC",
+        "status": "EXITED",
+        "exit_reason": "exhausted",
+        "stats": {"def_actions": 1, "pass_acc": 0.57}
+    }
+    valid_ids = {"EVT-m_42-1276"}
+
+    # Cas observé dans la vidéo originale : l'IA générait "Relentless pressure across the pitch!"
+    payload_bad = ColorCommentaryPayload(
+        analyst_color_en="The pressing block drops off into mid-recovery.",
+        fan_view_en="Relentless pressure across the pitch!",
+        analyst_color_fr="Le rideau défensif recule.",
+        fan_view_fr="Le danger s'éloigne.",
+        cited_event_ids=["EVT-m_42-1276"]
+    )
+    errors = verify_color_commentary(payload_bad, alarm_exited, valid_ids)
+    assert any("Tactical polarity error" in err for err in errors), f"Devrait rejeter 'relentless' en état EXITED : {errors}"
+
+
+def test_23_accept_valid_exited_both_languages():
+    """Valide qu'un commentaire de sortie cohérent (temporisation, décompression) passe le vérificateur sans erreur."""
+    alarm_exited = {
+        "minute": 62,
+        "team": "Meteor City",
+        "victim": "Nova FC",
+        "status": "EXITED",
+        "exit_reason": "exhausted",
+        "stats": {"def_actions": 1, "pass_acc": 0.57}
+    }
+    valid_ids = {"EVT-m_42-1276"}
+
+    payload_good = ColorCommentaryPayload(
+        analyst_color_en="The pressing block drops off into mid-recovery, allowing structured distribution from the back.",
+        fan_view_en="Pressure subsides as the defense regains its composure!",
+        analyst_color_fr="Le rideau défensif recule et permet de réorganiser sereinement la relance courte.",
+        fan_view_fr="Le danger s'éloigne, la relance retrouve enfin son calme !",
+        cited_event_ids=["EVT-m_42-1276"]
+    )
+    errors = verify_color_commentary(payload_good, alarm_exited, valid_ids)
+    assert errors == [], f"Un commentaire de sortie cohérent ne doit générer aucune erreur : {errors}"
+
+
+def test_24_multiaudience_views_coverage():
+    """Valide que build_multiaudience_views injecte réellement les commentaires personnalisés EN et FR."""
+    alarm_entered = {
+        "minute": 57,
+        "team": "Meteor City",
+        "victim": "Nova FC",
+        "status": "ENTERED",
+        "stats": {"def_actions": 3, "pass_acc": 0.50}
+    }
+    views = build_multiaudience_views(
+        alarm_entered,
+        analyst_color_en="Custom EN tactical analysis.",
+        fan_en="Custom EN fan reaction!",
+        analyst_color_fr="Analyse tactique FR sur mesure.",
+        fan_fr="Réaction fan FR sur mesure !"
+    )
+
+    assert "Custom EN tactical analysis." in views["en"]["analyst_view"]
+    assert views["en"]["fan_view"] == "Custom EN fan reaction!"
+    assert "Analyse tactique FR sur mesure." in views["fr"]["analyst_view"]
+    assert views["fr"]["fan_view"] == "Réaction fan FR sur mesure !"
+    assert "Meteor City" in views["club_voices"]
+    assert "Nova FC" in views["club_voices"]

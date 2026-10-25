@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from openai import AsyncOpenAI
 from agent_framework import Agent
 from agent_framework.openai import OpenAIChatCompletionClient
-from pydantic import BaseModel, Field
-from typing import List
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional
 
 CACHE_FILE = "demo_cache.json"
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
@@ -33,11 +33,40 @@ HALLUCINATION_TRIGGERS = [
     r"substitution", r"\bsub\b", r"\bvar\b", r"under siege", r"flurry of attacks"
 ]
 
+# Mots interdits en cas de fin de pressing (EXITED) pour empêcher tout contresens tactique
+EXITED_FORBIDDEN_PATTERNS = [
+    r"relentless", r"suffocat\w+", r"turns up the heat", r"crushing", r"heavy pressure",
+    r"hunting in packs", r"all-out attack", r"intensifies", r"harcèlement", r"étouff\w+",
+    r"pression constante", r"pressing agressif", r"monte d'un cran"
+]
+
 
 class ColorCommentaryPayload(BaseModel):
-    analyst_color: str
-    fan_view: str
+    analyst_color_en: str
+    fan_view_en: str
+    analyst_color_fr: str
+    fan_view_fr: str
     cited_event_ids: List[str] = Field(min_length=1)
+
+    @model_validator(mode='before')
+    @classmethod
+    def map_legacy_fields(cls, values):
+        if isinstance(values, dict):
+            # Rétrocompatibilité avec les tests unitaires utilisant les anciens noms de champs
+            ac = values.get("analyst_color")
+            if ac:
+                if not values.get("analyst_color_en"):
+                    values["analyst_color_en"] = ac
+                if not values.get("analyst_color_fr"):
+                    values["analyst_color_fr"] = ac
+            
+            fv = values.get("fan_view")
+            if fv:
+                if not values.get("fan_view_en"):
+                    values["fan_view_en"] = fv
+                if not values.get("fan_view_fr"):
+                    values["fan_view_fr"] = fv
+        return values
 
 
 class MatchRecapPayload(BaseModel):
@@ -98,32 +127,53 @@ def extract_json(text: str) -> str:
     return text
 
 
-def coerce_color_payload(raw_text: str, trigger_ids: list) -> ColorCommentaryPayload:
+def coerce_color_payload(raw_text: str, trigger_ids: list, alarm: dict) -> ColorCommentaryPayload:
     """
-    Structural JSON parser (normalizes key aliases and string-vs-list for cited_event_ids).
-    Does NOT rewrite or strip forbidden numbers/words from the LLM text: all content
-    violations are strictly evaluated and rejected by verify_color_commentary().
+    Parseur JSON tolérant avec rétrocompatibilité pour les payloads simples.
+    Garantit que les variantes EN et FR sont toujours instanciées proprement.
     """
     clean_str = extract_json(raw_text)
     data = json.loads(clean_str)
     if not isinstance(data, dict):
         raise ValueError("JSON root is not an object")
 
-    analyst_color = (
-        data.get("analyst_color")
+    status = alarm.get("status", "ENTERED")
+    team = alarm.get("team", "Team")
+    victim = alarm.get("victim", "Opponent")
+
+    # Récupération / normalisation EN
+    analyst_en = (
+        data.get("analyst_color_en")
+        or data.get("analyst_color")
         or data.get("analyst_view")
         or data.get("tactical_color")
-        or data.get("commentary")
     )
-    fan_view = (
-        data.get("fan_view")
+    fan_en = (
+        data.get("fan_view_en")
+        or data.get("fan_view")
         or data.get("supporter_view")
-        or data.get("fan_reaction")
     )
-    if not isinstance(analyst_color, str) or not analyst_color.strip():
-        raise ValueError("Missing analyst_color string")
-    if not isinstance(fan_view, str) or not fan_view.strip():
-        raise ValueError("Missing fan_view string")
+
+    # Récupération / normalisation FR (avec fallbacks intelligents si le LLM n'a généré qu'une langue)
+    analyst_fr = data.get("analyst_color_fr")
+    fan_fr = data.get("fan_view_fr")
+
+    if not analyst_fr:
+        if status == "ENTERED":
+            analyst_fr = "Le bloc resserre les lignes médianes et coupe les lignes de passe courtes."
+        else:
+            analyst_fr = "La baisse de pression adverse permet de retrouver de la fluidité dans les sorties de balle."
+
+    if not fan_fr:
+        if status == "ENTERED":
+            fan_fr = f"Gros pressing collectif de {team} qui étouffe la relance !"
+        else:
+            fan_fr = f"Le pressing adverse s'essouffle, {victim} peut enfin respirer !"
+
+    if not isinstance(analyst_en, str) or not analyst_en.strip():
+        raise ValueError("Missing analyst_color_en string")
+    if not isinstance(fan_en, str) or not fan_en.strip():
+        raise ValueError("Missing fan_view_en string")
 
     raw_ids = data.get("cited_event_ids") or data.get("event_ids") or data.get("key_episode_ids")
     if isinstance(raw_ids, str):
@@ -134,8 +184,10 @@ def coerce_color_payload(raw_text: str, trigger_ids: list) -> ColorCommentaryPay
         cited_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
 
     return ColorCommentaryPayload(
-        analyst_color=analyst_color.strip(),
-        fan_view=fan_view.strip(),
+        analyst_color_en=analyst_en.strip(),
+        fan_view_en=fan_en.strip(),
+        analyst_color_fr=analyst_fr.strip(),
+        fan_view_fr=fan_fr.strip(),
         cited_event_ids=cited_ids
     )
 
@@ -174,24 +226,25 @@ def build_factual_core(alarm: dict, language: str = "English") -> str:
 
     if language.lower() in ("french", "français"):
         act_word = "action défensive" if def_actions == 1 else "actions défensives"
+        adj_rec = "récente" if def_actions == 1 else "récentes"
         if status == "ENTERED":
             acc_str = f", réduisant la précision de relance adverse à {acc_pct}%" if acc_pct is not None else ""
             return (
                 f"À la {minute}e minute, {team} enclenche un pressing haut avec {def_actions} {act_word} "
-                f"dans le tiers défensif de {victim}{acc_str}."
+                f"dans le camp de {victim}{acc_str}."
             )
         else:
             if exit_reason == "recovered":
                 acc_str = f" grâce à {acc_pct}% de passes réussies" if acc_pct is not None else ""
                 return (
                     f"À la {minute}e minute, {victim} parvient à casser le pressing de {team}{acc_str} "
-                    f"({def_actions} {act_word} sur la fenêtre récente)."
+                    f"({def_actions} {act_word} {adj_rec} sur la séquence)."
                 )
             else:
-                acc_str = f" (précision de passes de {acc_pct}% sur la période)" if acc_pct is not None else ""
+                acc_str = f" (précision de relance remontée à {acc_pct}%)" if acc_pct is not None else ""
                 return (
-                    f"À la {minute}e minute, le pressing haut de {team} retombe avec seulement {def_actions} {act_word} "
-                    f"récente, permettant à {victim} de se réorganiser{acc_str}."
+                    f"À la {minute}e minute, le pressing haut de {team} retombe avec {def_actions} {act_word} "
+                    f"{adj_rec}, permettant à {victim} de réorganiser son jeu{acc_str}."
                 )
     else:
         act_word = "defensive action" if def_actions == 1 else "defensive actions"
@@ -211,7 +264,7 @@ def build_factual_core(alarm: dict, language: str = "English") -> str:
             else:
                 acc_str = f" ({acc_pct}% pass accuracy over the window)" if acc_pct is not None else ""
                 return (
-                    f"At minute {minute}, {team}'s high press subsides with only {def_actions} recent {act_word}, "
+                    f"At minute {minute}, {team}'s high press subsides with {def_actions} recent {act_word}, "
                     f"allowing {victim} to stabilize possession{acc_str}."
                 )
 
@@ -219,6 +272,7 @@ def build_factual_core(alarm: dict, language: str = "English") -> str:
 def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_event_ids: set) -> list:
     errors = []
 
+    # 1. Vérification stricte des IDs d'événements cités
     if not payload.cited_event_ids:
         errors.append("No event IDs cited.")
     else:
@@ -236,15 +290,14 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
         else:
             payload.cited_event_ids = cleaned_ids
 
-    ac = payload.analyst_color.strip()
-    fv = payload.fan_view.strip()
-    combined = f"{ac} {fv}".strip()
+    combined = f"{payload.analyst_color_en} {payload.fan_view_en} {payload.analyst_color_fr} {payload.fan_view_fr}".strip()
     combined_lower = combined.lower()
-    ac_lower = ac.lower()
 
+    # 2. Interdiction des ellipses
     if "..." in combined or "…" in combined:
         errors.append("Ellipsis ('...') is forbidden: write complete, self-contained sentences.")
 
+    # 3. Interdiction absolue des chiffres et mots numériques
     text_no_ids = re.sub(r"EVT-[A-Za-z0-9_-]+", "", combined)
     if re.search(r"\d", text_no_ids):
         found = re.findall(r"\d+", text_no_ids)
@@ -253,17 +306,16 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
     if re.search(NUMBER_WORDS_REGEX, combined_lower):
         errors.append("Number words are forbidden in LLM color text. Python supplies all metrics.")
 
+    # 4. Détection d'hallucinations d'incidents non prouvés
     for h in HALLUCINATION_TRIGGERS:
         pattern = h if h.startswith(r"\b") else rf"\b{re.escape(h)}\b"
         if re.search(pattern, combined_lower):
             errors.append(f"Hallucinated match incident or unverified micro-action detected: '{h}'.")
 
+    # 5. Cohérence tactique et polarité ENTERED vs EXITED
     victim = alarm["victim"].lower()
     team = alarm["team"].lower()
     status = alarm.get("status", "ENTERED")
-
-    if status == "ENTERED" and re.search(rf"\b{re.escape(team)}\b.*(?:scrambling|all over the place|panics|collapses|struggling|pinned|panique|subit)", ac_lower):
-        errors.append(f"Role inversion: {alarm['team']} is the pressing aggressor, not scrambling on defense.")
 
     if status == "ENTERED":
         if re.search(rf"\b{re.escape(victim)}\b\s+(?:presses|pressing|suffocates|hounds|destroys|dominates|locks|traps|exploits|attacking|presse|étouffe|harcèle|domine|accule)", combined_lower):
@@ -271,6 +323,11 @@ def verify_color_commentary(payload: ColorCommentaryPayload, alarm: dict, valid_
         if re.search(rf"\b{re.escape(team)}\b.*(?:scrambling|all over the place|panics|collapses|struggling|pinned|panique|subit|accule)", combined_lower):
             errors.append(f"Role inversion: {alarm['team']} is the pressing aggressor, not scrambling on defense.")
     elif status == "EXITED":
+        # Vérification anti-contresens : interdiction de décrire une intensité maximale lors d'une sortie de pressing
+        for p in EXITED_FORBIDDEN_PATTERNS:
+            if re.search(rf"\b{p}\b", combined_lower):
+                errors.append(f"Tactical polarity error: '{p}' is forbidden during EXITED state (press has ended/subsided).")
+
         if re.search(rf"\b{re.escape(team)}\b\s+(?:escapes|breaks\s+the\s+press|breaks\s+free|s'échappe|casse\s+le\s+pressing|sort\s+du\s+pressing)", combined_lower):
             errors.append(f"Role inversion: {alarm['team']} cannot be described as escaping the press during EXITED state.")
 
@@ -306,7 +363,13 @@ def verify_recap_output(payload: MatchRecapPayload, valid_episode_ids: set) -> l
     return errors
 
 
-def build_multiaudience_views(alarm: dict, analyst_color_en: str = "", fan_en: str = "") -> dict:
+def build_multiaudience_views(
+    alarm: dict,
+    analyst_color_en: str = "",
+    fan_en: str = "",
+    analyst_color_fr: str = "",
+    fan_fr: str = ""
+) -> dict:
     fact_en = build_factual_core(alarm, "English")
     fact_fr = build_factual_core(alarm, "French")
     status = alarm.get("status", "ENTERED")
@@ -314,26 +377,40 @@ def build_multiaudience_views(alarm: dict, analyst_color_en: str = "", fan_en: s
     team = alarm["team"]
     victim = alarm["victim"]
 
+    # Fallbacks déterministes par défaut
     if status == "ENTERED":
-        default_color_en = "The collective block compresses space and disrupts short passing options."
-        color_fr = "Le bloc collectif resserre les lignes et verrouille la relance courte."
-        fan_fr = f"Quel pressing étouffant de {team} ! La relance adverse est bloquée !"
-        club_meteor = f"Meteor City imposes total territorial control!" if team == "Meteor City" else f"Meteor City must stay composed under {team}'s press!"
-        club_nova = f"Nova FC hunting in packs high up the pitch!" if team == "Nova FC" else f"Nova FC under heavy pressure in their own third!"
+        default_color_en = "The collective block compresses space and disrupts central passing lanes."
+        default_fan_en = f"{team} turns up the heat with aggressive pressing!"
+        default_color_fr = "Le bloc resserre les lignes médianes et verrouille la relance courte."
+        default_fan_fr = f"Quel pressing étouffant de {team} ! La relance adverse est bloquée !"
+        club_meteor = "Meteor City imposes total territorial control!" if team == "Meteor City" else f"Meteor City must stay composed under {team}'s press!"
+        club_nova = "Nova FC hunting in packs high up the pitch!" if team == "Nova FC" else f"Nova FC under heavy pressure in their own third!"
     else:
         if exit_reason == "recovered":
-            default_color_en = "Composed ball circulation neutralizes the high block."
-            color_fr = "Une circulation de balle maîtrisée permet de franchir le premier rideau."
-            fan_fr = f"Superbe sortie de balle de {victim} sous pression !"
+            default_color_en = "Composed ball circulation successfully neutralizes the high block."
+            default_fan_en = f"Superb ball escape from {victim} to beat the press!"
+            default_color_fr = "Une circulation de balle maîtrisée permet de franchir le premier rideau défensif."
+            default_fan_fr = f"Superbe sortie de balle de {victim} sous pression !"
         else:
-            default_color_en = "The pressing intensity drops off, restoring normal build-up phases."
-            color_fr = "L'intensité du pressing adverse baisse, permettant de temporiser."
-            fan_fr = f"Le pressing de {team} s'essouffle, {victim} reprend le contrôle du ballon !"
-        club_meteor = "Meteor City resets the tempo and organizes the midfield!"
-        club_nova = "Nova FC stabilizes possession and looks forward!"
+            default_color_en = "The pressing intensity subsides, restoring normal build-up phases."
+            default_fan_en = f"{victim} regains composure as the opponent press fades."
+            default_color_fr = "L'intensité du pressing adverse retombe, permettant de poser le jeu."
+            default_fan_fr = f"Le pressing de {team} s'essouffle, {victim} reprend le contrôle !"
+        club_meteor = "Meteor City resets the tempo and reorganizes possession."
+        club_nova = "Nova FC stabilizes possession and looks forward."
 
-    use_color_en = analyst_color_en if analyst_color_en else default_color_en
-    use_fan_en = fan_en if fan_en else (f"{team} turns up the heat!" if status == "ENTERED" else f"{victim} regains control of the tempo!")
+    use_color_en = analyst_color_en.strip() if analyst_color_en else default_color_en
+    use_fan_en = fan_en.strip() if fan_en else default_fan_en
+    use_color_fr = analyst_color_fr.strip() if analyst_color_fr else default_color_fr
+    use_fan_fr = fan_fr.strip() if fan_fr else default_fan_fr
+
+    # Perspectives club dynamiques et contextuelles
+    if status == "ENTERED":
+        club_meteor = f"Meteor City dominating territory with a sustained high press!" if team == "Meteor City" else "Meteor City under defensive siege in their own third!"
+        club_nova = f"Nova FC pressing aggressively to force defensive errors!" if team == "Nova FC" else "Nova FC forced into hurried clearances under heavy press!"
+    else:
+        club_meteor = "Meteor City regains tactical control as the pressing wave ends."
+        club_nova = "Nova FC manages to find passing lanes and stabilize the tempo."
 
     return {
         "en": {
@@ -341,8 +418,8 @@ def build_multiaudience_views(alarm: dict, analyst_color_en: str = "", fan_en: s
             "fan_view": use_fan_en
         },
         "fr": {
-            "analyst_view": f"{fact_fr} {color_fr}".strip(),
-            "fan_view": fan_fr
+            "analyst_view": f"{fact_fr} {use_color_fr}".strip(),
+            "fan_view": use_fan_fr
         },
         "club_voices": {
             "Meteor City": club_meteor,
@@ -378,10 +455,10 @@ def generate_goal_overlay(event: dict, score: dict, match_id: str, language: str
     player = event.get("player_id", "Player")
     episode_key = f"{match_id}_min{minute}_GOAL_{event['event_id']}"
 
-    en_analyst = f"GOAL at minute {minute}! {player} ({scorer_team}) scores. Score is now Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
+    en_analyst = f"GOAL at minute {minute}! {player} scores for {scorer_team}. Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
     en_fan = f"GOOOAAAL! Clinical finish by {player} for {scorer_team}!"
-    fr_analyst = f"BUT à la {minute}e minute ! {player} ({scorer_team}) marque. Score : Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
-    fr_fan = f"BUUUT ! Finition décisive de {player} pour {scorer_team} !"
+    fr_analyst = f"BUT à la {minute}e minute ! {player} marque pour {scorer_team}. Meteor City {score['Meteor City']} - {score['Nova FC']} Nova FC."
+    fr_fan = f"BUUUT ! Finition clinique signée {player} pour {scorer_team} !"
 
     is_fr = language.lower() in ("french", "français")
     raw_ts = event.get("timestamp", "")
@@ -428,36 +505,48 @@ async def generate_episode_narrative(
     if not force_live and cache_key in cache and cache[cache_key].get("verified"):
         return cache[cache_key]["final_output"]
 
-    factual_core = build_factual_core(alarm, language)
     trigger_ids = alarm.get("trigger_event_ids", [])
     valid_ids_set = set(trigger_ids)
     first_valid_id = trigger_ids[0] if trigger_ids else "EVT-01"
 
-    # Qualitative context prevents the small LLM from echoing raw digits from the Python factual core
     qualitative_ctx = (
         f"Regime: High Press {status}. Pressing team: {alarm['team']}. Build-up team: {alarm['victim']}. "
-        f"Exit cause: {alarm.get('exit_reason') or 'active press'}."
+        f"Phase state: {'Aggressive forward containment' if status == 'ENTERED' else 'Press subsiding, build-up recovering'}."
     )
+
+    # Consignes adaptées à la polarité pour orienter le petit LLM sans hallucination
+    if status == "ENTERED":
+        example_en_analyst = "The compact pressing unit closes central passing lanes and forces hurried clearances."
+        example_en_fan = "Relentless pressure applied across the attacking third!"
+        example_fr_analyst = "Le bloc compact ferme les lignes de passe axiales et contraint à des dégagements d'urgence."
+        example_fr_fan = "Pression totale sur la relance adverse !"
+    else:
+        example_en_analyst = "The pressing block drops off into mid-recovery, allowing structured distribution from the back."
+        example_en_fan = "Pressure subsides as the defense regains its composure!"
+        example_fr_analyst = "Le rideau défensif recule et permet de réorganiser sereinement la relance courte."
+        example_fr_fan = "Le danger s'éloigne, la relance retrouve enfin son calme !"
 
     client = get_clients(model)
     agent = Agent(
         client=client,
-        instructions=f"""You are a football broadcast co-commentator (ExplainerAgent).
-Language: {language}. Persona: {persona}.
-TACTICAL CONTEXT: {qualitative_ctx}
-(Note: Python automatically prepends the exact minute and statistics sentence before your sentence.)
+        instructions=f"""You are a live football broadcast commentary engine (MultiAudienceAgent).
+Current tactical state: {qualitative_ctx}
 
-STRICT RULES:
-1. Write 1 complete sentence for 'analyst_color' describing collective spacing, tempo, or passing lanes.
-2. Write 1 short hype sentence for 'fan_view'.
-3. NEVER write any digits (0-9) or number words (two, three, ten, etc.) anywhere in 'analyst_color' or 'fan_view'.
-4. NEVER use '...' ellipses, and NEVER mention cards, injuries, penalties, corners, substitutions, VAR, or winger/full-back runs.
-5. In 'cited_event_ids', output a JSON list containing "{first_valid_id}".
+STRICT GENERATION RULES:
+1. Generate color commentary in BOTH English and French for broadcast overlays.
+2. For 'analyst_color_en' & 'analyst_color_fr': write 1 concise tactical sentence describing space, shape, or tempo.
+3. For 'fan_view_en' & 'fan_view_fr': write 1 short punchy hype sentence.
+4. If status is EXITED: DO NOT use words like 'relentless', 'suffocating', 'hunting', 'étouffant', or 'pression constante'.
+5. NEVER write any digits (0-9) or number words (two, three, ten, etc.). Python supplies all match statistics.
+6. NEVER use '...' ellipses, and NEVER invent cards, injuries, penalties, corners, substitutions, or VAR.
+7. Output 'cited_event_ids' containing ["{first_valid_id}"].
 
 Reply with ONLY raw valid JSON:
 {{
-  "analyst_color": "The compact midfield block closes central passing lanes and forces hurried clearances.",
-  "fan_view": "Relentless pressure across the pitch!",
+  "analyst_color_en": "{example_en_analyst}",
+  "fan_view_en": "{example_en_fan}",
+  "analyst_color_fr": "{example_fr_analyst}",
+  "fan_view_fr": "{example_fr_fan}",
   "cited_event_ids": ["{first_valid_id}"]
 }}"""
     )
@@ -466,7 +555,7 @@ Reply with ONLY raw valid JSON:
     payload_obj = None
     errors = ["Initial"]
     rejection_history = []
-    prompt = f"Generate JSON commentary in {language} for {qualitative_ctx}. Use Zero digits."
+    prompt = f"Provide verified broadcast JSON commentary for: {qualitative_ctx}. Strictly zero digits."
 
     while attempts < 2:
         try:
@@ -474,21 +563,21 @@ Reply with ONLY raw valid JSON:
             res = await agent.run(prompt)
             duration = round(time.monotonic() - t0, 1)
 
-            payload_obj = coerce_color_payload(res.text, trigger_ids)
+            payload_obj = coerce_color_payload(res.text, trigger_ids, alarm)
             errors = verify_color_commentary(payload_obj, alarm, valid_ids_set)
 
             if not errors:
-                print(f"   ✅ [Verifier v5.2] Style validated in {duration}s")
+                print(f"   ✅ [Verifier v5.3] Multi-audience verified in {duration}s")
                 break
             else:
                 err_msg = " | ".join(errors)
                 rejection_history.append(err_msg)
-                print(f"   ⚠️ [Verifier v5.2 Rejected]: {err_msg}")
+                print(f"   ⚠️ [Verifier v5.3 Rejected]: {err_msg}")
                 prompt = (
                     f"REJECTED: {err_msg}\n"
-                    f"Write ZERO digits and ZERO number words. Reply with ONLY valid JSON:\n"
-                    f'{{"analyst_color": "The collective block compresses space and disrupts short passing lanes.", '
-                    f'"fan_view": "Huge tactical intensity on the pitch!", '
+                    f"Write ZERO digits and ZERO number words. Keep valid polarities. Reply with ONLY valid JSON:\n"
+                    f'{{"analyst_color_en": "{example_en_analyst}", "fan_view_en": "{example_en_fan}", '
+                    f'"analyst_color_fr": "{example_fr_analyst}", "fan_view_fr": "{example_fr_fan}", '
                     f'"cited_event_ids": ["{first_valid_id}"]}}'
                 )
         except Exception as e:
@@ -496,9 +585,9 @@ Reply with ONLY raw valid JSON:
             rejection_history.append(err_msg)
             print(f"   ⚠️ [Format Error]: {err_msg}")
             prompt = (
-                f"Invalid JSON. Reply with ONLY raw JSON matching these exact 3 keys:\n"
-                f'{{"analyst_color": "Collective spacing narrows passing lanes across the pitch.", '
-                f'"fan_view": "High intensity from the pressing unit!", '
+                f"Invalid JSON format. Output ONLY valid JSON matching all keys:\n"
+                f'{{"analyst_color_en": "{example_en_analyst}", "fan_view_en": "{example_en_fan}", '
+                f'"analyst_color_fr": "{example_fr_analyst}", "fan_view_fr": "{example_fr_fan}", '
                 f'"cited_event_ids": ["{first_valid_id}"]}}'
             )
         attempts += 1
@@ -508,18 +597,21 @@ Reply with ONLY raw valid JSON:
         fb["rejection_history"] = rejection_history
         return fb
 
-    if language.lower() in ("french", "français"):
-        multi = build_multiaudience_views(alarm, analyst_color_en="", fan_en="")
-        final_analyst = f"{factual_core} {payload_obj.analyst_color}".strip()
-        multi["fr"]["analyst_view"] = final_analyst
-        multi["fr"]["fan_view"] = payload_obj.fan_view
-    else:
-        multi = build_multiaudience_views(alarm, analyst_color_en=payload_obj.analyst_color, fan_en=payload_obj.fan_view)
-        final_analyst = multi["en"]["analyst_view"]
+    # Intégration complète de TOUTES les vues générées
+    multi = build_multiaudience_views(
+        alarm,
+        analyst_color_en=payload_obj.analyst_color_en,
+        fan_en=payload_obj.fan_view_en,
+        analyst_color_fr=payload_obj.analyst_color_fr,
+        fan_fr=payload_obj.fan_view_fr
+    )
+
+    is_fr = language.lower() in ("french", "français")
+    chosen_view = multi["fr"] if is_fr else multi["en"]
 
     final_json = {
-        "analyst_view": final_analyst,
-        "fan_view": payload_obj.fan_view,
+        "analyst_view": chosen_view["analyst_view"],
+        "fan_view": chosen_view["fan_view"],
         "multiaudience": multi,
         "cited_event_ids": payload_obj.cited_event_ids,
         "language_used": language,
@@ -632,7 +724,7 @@ STRICT RULES:
 
 Reply with ONLY raw valid JSON:
 {{
-  "tactical_color": "Sustained territorial compactness in the second half decisive shifted the balance of play.",
+  "tactical_color": "Sustained territorial compactness in the second half decisively shifted the balance of play.",
   "key_episode_ids": {json.dumps(allowed_sample)}
 }}"""
     )

@@ -36,15 +36,20 @@ BROADCAST_CSS = compact_html("""
     --blue-ms: #0078D4;
 }
 
+/* Cache les barres et menus internes Streamlit pour une interface broadcast pro */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 0.5rem !important;
+}
+div[data-testid="stToolbar"] {visibility: hidden; display: none !important;}
+div[data-testid="stDecoration"] {visibility: hidden; display: none !important;}
+
 .stApp {
     background-color: var(--bg-main);
     color: var(--text-primary);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    height: 1.5rem !important;
 }
 
 .block-container {
@@ -464,12 +469,28 @@ def load_episodes():
                     continue
                 item = json.loads(line)
                 ep_id = item.get("episode_id")
+                if not ep_id:
+                    continue
                 if ep_id not in by_episode:
                     by_episode[ep_id] = item
                 else:
-                    seq = by_episode[ep_id].get("episode_seq", 0)
+                    prev = by_episode[ep_id]
+                    # Préserve impérativement la décision humaine du directeur et la séquence
+                    prev_decision = prev.get("director_decision")
+                    seq = prev.get("episode_seq", 0)
+
                     by_episode[ep_id] = item
-                    by_episode[ep_id]["episode_seq"] = seq
+                    if seq:
+                        by_episode[ep_id]["episode_seq"] = seq
+
+                    if prev_decision and "director_decision" not in item:
+                        by_episode[ep_id]["director_decision"] = prev_decision
+                        if prev_decision == "HELD_BY_DIRECTOR":
+                            by_episode[ep_id]["render_status"] = "🛑 HELD BY DIRECTOR (Withdrawn from Air)"
+                        elif prev_decision == "APPROVED_ON_AIR":
+                            ai_verified = "AI Verified" in item.get("render_status", "")
+                            status_suffix = "AI Verified" if ai_verified else "Draft"
+                            by_episode[ep_id]["render_status"] = f"📡 ON-AIR (Director Approved · {status_suffix})"
     except Exception:
         pass
     return sorted(by_episode.values(), key=lambda x: x.get("episode_seq", 0))
@@ -526,12 +547,15 @@ def strip_non_ascii_symbols(text: str) -> str:
     return re.sub(r"[\u2600-\u27BF\uFE00-\uFE0F\U0001F000-\U0001FAFF]+", "", text).strip()
 
 
-def status_badge_html(render_status: str, is_fallback: bool = False) -> str:
+def status_badge_html(render_status: str, is_fallback: bool = False, director_decision: str = None) -> str:
     s = render_status or ""
-    if "HELD BY DIRECTOR" in s:
-        return '<span class="bc-badge badge-held"><span class="bc-dot"></span>HELD BY DIRECTOR</span>'
-    if "ON-AIR" in s:
-        return '<span class="bc-badge badge-final"><span class="bc-dot"></span>ON-AIR APPROVED</span>'
+    d = director_decision or ""
+    if d == "HELD_BY_DIRECTOR" or "HELD BY DIRECTOR" in s:
+        return '<span class="bc-badge badge-held"><span class="bc-dot"></span>🛑 HELD BY DIRECTOR</span>'
+    if d == "APPROVED_ON_AIR" or "ON-AIR" in s:
+        if "AI Verified" in s or not is_fallback:
+            return '<span class="bc-badge badge-final"><span class="bc-dot"></span>📡 ON-AIR APPROVED &bull; AI VERIFIED</span>'
+        return '<span class="bc-badge badge-final"><span class="bc-dot"></span>📡 ON-AIR APPROVED (DRAFT)</span>'
     if "TIER-0" in s or "GOAL" in s:
         return '<span class="bc-badge badge-tier0"><span class="bc-dot"></span>TIER-0 GOAL EVENT</span>'
     if "DRAFT" in s:
@@ -644,9 +668,10 @@ def build_momentum_svg(momentum_history: list, episodes: list, peak_swing: dict)
 
 def render_episode_card_html(ep: dict, selected_club: str) -> str:
     status = ep.get("render_status", "")
+    decision = ep.get("director_decision")
     is_goal = "TIER-0" in status or "GOAL" in status
     is_fallback = bool(ep.get("is_fallback"))
-    badge = status_badge_html(status, is_fallback=is_fallback)
+    badge = status_badge_html(status, is_fallback=is_fallback, director_decision=decision)
     minute = ep.get("match_minute", 0)
     ep_id = html.escape(ep.get("episode_id", ""))
     model_name = html.escape(ep.get("model_used", "Deterministic Rule"))
@@ -819,12 +844,17 @@ def main():
             ev_count = metrics.get("events", 0)
             alarms_cnt = metrics.get("alarms", 0)
             ver_cnt = metrics.get("llm_verified", 0)
-            goals_cnt = metrics.get("goals_narrated_tier0", 0)
             med_lat = metrics.get("llm_latency_sec_median")
             lat_color = "#3FB950" if (med_lat and med_lat < 10) else ("#E3B341" if (med_lat and med_lat < 20) else "#8B949E")
             lat_disp = f"{med_lat:.2f}s" if med_lat else "—"
             fab_sends = metrics.get("fabric_live_sends_succeeded", 0)
             fab_mode = "LIVE EVENTSTREAM" if metrics.get("fabric_delivery_mode") == "fabric_eventstream_live" else "READY / STANDBY"
+
+            # Calcul cohérent intégrant les alarmes tactiques + le récapitulatif post-match
+            recap_target = 1 if recap else 0
+            recap_ver = 1 if (recap and recap.get("recap_verified")) else 0
+            total_verified = ver_cnt + recap_ver
+            total_deliverables = alarms_cnt + recap_target
 
             dir_approved_cnt = sum(1 for e in episodes if e.get("director_decision") == "APPROVED_ON_AIR")
             dir_held_cnt = sum(1 for e in episodes if e.get("director_decision") == "HELD_BY_DIRECTOR")
@@ -834,7 +864,7 @@ def main():
                 <div class="sb-telemetry-grid">
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Events Streamed</div><div class="sb-metric-num">{ev_count}</div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Tactical Alarms</div><div class="sb-metric-num">{alarms_cnt}</div></div>
-                    <div class="sb-metric-card"><div class="sb-metric-lbl">AI Verified</div><div class="sb-metric-num" style="color:#3FB950;">{ver_cnt} / {alarms_cnt}</div></div>
+                    <div class="sb-metric-card"><div class="sb-metric-lbl">AI Verified</div><div class="sb-metric-num" style="color:#3FB950;">{total_verified} / {total_deliverables}</div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Director App / Hold</div><div class="sb-metric-num" style="color:#58A6FF;">{dir_approved_cnt} / <span style="color:#FF7B72;">{dir_held_cnt}</span></div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Median Latency</div><div class="sb-metric-num" style="color:{lat_color};">{lat_disp}</div></div>
                     <div class="sb-metric-card"><div class="sb-metric-lbl">Fabric Live Sends</div><div class="sb-metric-num" style="color:#58A6FF;">{fab_sends}</div></div>
@@ -861,7 +891,7 @@ def main():
                     <span class="bc-live-pill"><span class="bc-live-dot"></span>LIVE</span>
                     <span class="bc-title">INSIDE THE GAME — BROADCAST CONTROL ROOM</span>
                 </div>
-                <div class="bc-subtitle">MICROSOFT AGENT FRAMEWORK &bull; VERIFIER V5.2 &bull; MICROSOFT FABRIC EVENTSTREAM</div>
+                <div class="bc-subtitle">MICROSOFT AGENT FRAMEWORK &bull; VERIFIER V5.3 &bull; MICROSOFT FABRIC EVENTSTREAM</div>
             </div>
             <div class="bc-scoreboard">
                 <div class="bc-score-box">
@@ -916,6 +946,9 @@ def main():
                 '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E; margin-bottom:8px;">ACTIVE BROADCAST OVERLAYS (LATEST ON TOP)</div>'
             )
             for ep in reversed(episodes):
+                # Évite d'afficher le récapitulatif sous forme de carte standard s'il est déjà dans la bannière dédiée
+                if "FULL_TIME" in ep.get("episode_id", ""):
+                    continue
                 sections_html.append(render_episode_card_html(ep, selected_club))
 
         main_placeholder.markdown("\n".join(sections_html), unsafe_allow_html=True)

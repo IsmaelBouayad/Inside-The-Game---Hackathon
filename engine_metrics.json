@@ -1,0 +1,17 @@
+{
+  "events": 856,
+  "alarms": 2,
+  "goals_narrated_tier0": 2,
+  "dropped_jobs": 0,
+  "llm_verified": 2,
+  "fallback_after_rejection": 0,
+  "timeouts": 0,
+  "errors": 0,
+  "superseded_finals": 0,
+  "fabric_delivery_mode": "fabric_eventstream_live",
+  "fabric_live_sends_succeeded": 8,
+  "fabric_local_fallbacks": 0,
+  "llm_latency_sec_median": 14.13,
+  "llm_latency_sec_max": 14.84,
+  "last_updated_utc": "2026-10-25T18:26:41Z"
+}
