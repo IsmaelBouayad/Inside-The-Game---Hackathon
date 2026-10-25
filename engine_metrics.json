@@ -11,7 +11,7 @@
   "fabric_delivery_mode": "fabric_eventstream_live",
   "fabric_live_sends_succeeded": 8,
   "fabric_local_fallbacks": 0,
-  "llm_latency_sec_median": 12.64,
-  "llm_latency_sec_max": 14.58,
-  "last_updated_utc": "2026-10-23T11:53:54Z"
+  "llm_latency_sec_median": 9.43,
+  "llm_latency_sec_max": 12.93,
+  "last_updated_utc": "2026-10-25T17:06:50Z"
 }

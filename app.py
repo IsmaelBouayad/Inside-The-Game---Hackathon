@@ -749,15 +749,18 @@ def main():
         target = tactical_eps[-1] if tactical_eps else (eps[-1] if eps else None)
         if target:
             log_director_decision(target.get("episode_id", "unknown"), "APPROVED_ON_AIR")
+            st.rerun()
     if col_btn2.button("✖ OVERRIDE / HOLD", use_container_width=True):
         eps = load_episodes()
         tactical_eps = [e for e in eps if "ENTERED" in e.get("episode_id", "") or "EXITED" in e.get("episode_id", "")]
         target = tactical_eps[-1] if tactical_eps else (eps[-1] if eps else None)
         if target:
             log_director_decision(target.get("episode_id", "unknown"), "HELD_BY_DIRECTOR")
+            st.rerun()
 
     if st.sidebar.button("⟲ RESET / CLEAR STREAM", use_container_width=True):
         clear_run_files()
+        st.rerun()
 
     st.sidebar.markdown('<div class="sb-section-title">3. EDGE &amp; FABRIC TELEMETRY</div>', unsafe_allow_html=True)
     sidebar_telemetry = st.sidebar.empty()
@@ -829,74 +832,73 @@ def main():
                 unsafe_allow_html=True
             )
 
-        with main_placeholder.container():
-            header_html = compact_html(f"""
-            <div class="bc-header">
-                <div class="bc-brand">
-                    <div class="bc-brand-top">
-                        <span class="bc-live-pill"><span class="bc-live-dot"></span>LIVE</span>
-                        <span class="bc-title">INSIDE THE GAME — BROADCAST CONTROL ROOM</span>
-                    </div>
-                    <div class="bc-subtitle">MICROSOFT AGENT FRAMEWORK &bull; VERIFIER V5.2 &bull; MICROSOFT FABRIC EVENTSTREAM</div>
+        sections_html = []
+
+        header_html = compact_html(f"""
+        <div class="bc-header">
+            <div class="bc-brand">
+                <div class="bc-brand-top">
+                    <span class="bc-live-pill"><span class="bc-live-dot"></span>LIVE</span>
+                    <span class="bc-title">INSIDE THE GAME — BROADCAST CONTROL ROOM</span>
                 </div>
-                <div class="bc-scoreboard">
-                    <div class="bc-score-box">
-                        <span class="bc-club-code">MET</span>
-                        <span class="bc-score-digits">{score.get('Meteor City', 0)} &mdash; {score.get('Nova FC', 0)}</span>
-                        <span class="bc-club-code">NOV</span>
-                    </div>
-                    <div class="bc-clock-box">
-                        <div class="bc-clock-digits">{display_min:02d}:00</div>
-                        <div class="bc-clock-meta">REGIME: {html.escape(regime.upper())} &bull; PACE X{speed}</div>
-                    </div>
+                <div class="bc-subtitle">MICROSOFT AGENT FRAMEWORK &bull; VERIFIER V5.2 &bull; MICROSOFT FABRIC EVENTSTREAM</div>
+            </div>
+            <div class="bc-scoreboard">
+                <div class="bc-score-box">
+                    <span class="bc-club-code">MET</span>
+                    <span class="bc-score-digits">{score.get('Meteor City', 0)} &mdash; {score.get('Nova FC', 0)}</span>
+                    <span class="bc-club-code">NOV</span>
+                </div>
+                <div class="bc-clock-box">
+                    <div class="bc-clock-digits">{display_min:02d}:00</div>
+                    <div class="bc-clock-meta">REGIME: {html.escape(regime.upper())} &bull; PACE X{speed}</div>
+                </div>
+            </div>
+        </div>
+        """)
+        sections_html.append(header_html)
+
+        mom_svg = build_momentum_svg(clock.get("momentum_history", []), episodes, peak)
+        if mom_svg:
+            sections_html.append(mom_svg)
+
+        if recap:
+            r_head = html.escape(strip_non_ascii_symbols(recap.get("headline", "")))
+            r_sum = html.escape(strip_non_ascii_symbols(recap.get("tactical_summary", "")))
+            r_fact, r_color = split_fact_and_color(r_sum)
+            r_chips = "".join(f'<span class="bc-chip">{html.escape(k)}</span>' for k in recap.get("key_episode_ids", []))
+            r_ver = "AI VERIFIED (RECAP AGENT)" if recap.get("recap_verified") else "DETERMINISTIC FALLBACK (NO LLM)"
+            recap_html = compact_html(f"""
+            <div class="bc-card" style="border-color:#0078D4; background:linear-gradient(135deg, rgba(0,120,212,0.14) 0%, #141B24 70%);">
+                <div class="bc-card-header">
+                    <span class="bc-badge badge-tier0"><span class="bc-dot"></span>POST-MATCH SMART SUMMARY (RECAP AGENT HANDOFF)</span>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#3FB950;">{r_ver}</span>
+                </div>
+                <div style="font-size:16px; font-weight:600; color:#E6EDF3; margin-bottom:6px;">{r_head}</div>
+                <div style="margin-bottom:10px;">
+                    <span class="bc-fact-text">{r_fact}</span>
+                    <span class="bc-color-text">{r_color}</span>
+                </div>
+                <div class="bc-chip-row">
+                    <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E;">HANDOFF EPISODES:</span>
+                    {r_chips}
                 </div>
             </div>
             """)
-            st.markdown(header_html, unsafe_allow_html=True)
+            sections_html.append(recap_html)
 
-            mom_svg = build_momentum_svg(clock.get("momentum_history", []), episodes, peak)
-            if mom_svg:
-                st.markdown(mom_svg, unsafe_allow_html=True)
+        if not episodes:
+            sections_html.append(
+                '<div class="bc-card" style="color:#8B949E; font-size:13px;">Stream ready. Run <code>python3 engine.py --start-minute 48</code> to watch live tactical detection and AI verification...</div>'
+            )
+        else:
+            sections_html.append(
+                '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E; margin-bottom:8px;">ACTIVE BROADCAST OVERLAYS (LATEST ON TOP)</div>'
+            )
+            for ep in reversed(episodes):
+                sections_html.append(render_episode_card_html(ep, selected_club))
 
-            if not episodes:
-                st.markdown(
-                    '<div class="bc-card" style="color:#8B949E; font-size:13px;">Stream ready. Run <code>python3 engine.py --start-minute 48</code> to watch live tactical detection and AI verification...</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E; margin-bottom:8px;">ACTIVE BROADCAST OVERLAYS (LATEST ON TOP)</div>',
-                    unsafe_allow_html=True
-                )
-                for ep in reversed(episodes):
-                    st.markdown(render_episode_card_html(ep, selected_club), unsafe_allow_html=True)
-
-            if recap:
-                r_head = html.escape(strip_non_ascii_symbols(recap.get("headline", "")))
-                r_sum = html.escape(strip_non_ascii_symbols(recap.get("tactical_summary", "")))
-                r_fact, r_color = split_fact_and_color(r_sum)
-                r_chips = "".join(f'<span class="bc-chip">{html.escape(k)}</span>' for k in recap.get("key_episode_ids", []))
-                r_ver = "AI VERIFIED (RECAP AGENT)" if recap.get("recap_verified") else "DETERMINISTIC FALLBACK (NO LLM)"
-                st.markdown(
-                    compact_html(f"""
-                    <div class="bc-card" style="border-color:#0078D4; background:linear-gradient(135deg, rgba(0,120,212,0.12) 0%, #141B24 70%);">
-                        <div class="bc-card-header">
-                            <span class="bc-badge badge-tier0"><span class="bc-dot"></span>POST-MATCH SMART SUMMARY (RECAP AGENT HANDOFF)</span>
-                            <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#3FB950;">{r_ver}</span>
-                        </div>
-                        <div style="font-size:16px; font-weight:600; color:#E6EDF3; margin-bottom:6px;">{r_head}</div>
-                        <div style="margin-bottom:10px;">
-                            <span class="bc-fact-text">{r_fact}</span>
-                            <span class="bc-color-text">{r_color}</span>
-                        </div>
-                        <div class="bc-chip-row">
-                            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E;">HANDOFF EPISODES:</span>
-                            {r_chips}
-                        </div>
-                    </div>
-                    """),
-                    unsafe_allow_html=True
-                )
+        main_placeholder.markdown("\n".join(sections_html), unsafe_allow_html=True)
 
         time.sleep(0.5)
 

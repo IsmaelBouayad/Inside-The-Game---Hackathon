@@ -202,7 +202,7 @@ async def run_full_judge_audit():
     judge.record(
         "5. Enterprise & Fabric",
         "Director Hold/Approve State Transitions & Fabric Delivery Accounting",
-        ("HELD BY DIRECTOR" in held_state) and ("ON-AIR (Director Approved)" in approved_state) and (live_sends > 0 or local_fb > 0),
+        ("HELD BY DIRECTOR" in held_state) and ("ON-AIR (Director Approved)" in approved_state) and (live_sends > 0 and local_fb == 0) if metrics.get("fabric_delivery_mode") == "fabric_eventstream_live" else (local_fb > 0),
         f"Director states verified ('{held_state}' -> '{approved_state}') | Fabric live_sends={live_sends}, local_fallbacks={local_fb}"
     )
 

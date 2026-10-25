@@ -173,7 +173,7 @@ async def match_engine(
     llm_timeout=None,
     start_minute=None
 ):
-    speed = float(speed or os.environ.get("MATCH_SPEED", 60.0))
+    speed = float(speed or os.environ.get("MATCH_SPEED", 150.0))
     tactical_speed = float(os.environ.get("TACTICAL_SPEED", 2.0))
     dynamic_pacing = os.environ.get("DYNAMIC_PACING", "1") == "1"
     llm_timeout = float(llm_timeout or os.environ.get("LLM_TIMEOUT", 45.0))
@@ -184,9 +184,13 @@ async def match_engine(
         print(f"📦 [Init] Generating deterministic Seed 42 telemetry into '{events_file}'...")
         generate_match(42, "m_42", events_file, "ground_truth.json")
 
-    for f_path in (UI_FILE, CLOCK_FILE, RECAP_FILE, METRICS_FILE):
+    for f_path in (UI_FILE, CLOCK_FILE, RECAP_FILE, METRICS_FILE, "director_audit.jsonl"):
         if os.path.exists(f_path):
-            os.remove(f_path)
+            try:
+                os.remove(f_path)
+            except Exception:
+                pass
+    update_clock(start_min, {"Meteor City": 0, "Nova FC": 0}, "Normal", speed, [], {})
 
     detector = OnlineShiftDetector()
     metrics = Metrics()
