@@ -5,3 +5,4 @@ python-dotenv==1.2.4
 azure-eventhub==5.15.1
 streamlit==1.65.0
 pandas==2.2.2
+pytest>=8.0.0

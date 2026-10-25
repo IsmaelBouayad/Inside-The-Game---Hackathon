@@ -438,6 +438,20 @@ def clear_run_files():
                 pass
 
 
+def load_audit_trail():
+    if not os.path.exists(AUDIT_FILE):
+        return []
+    rows = []
+    try:
+        with open(AUDIT_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    rows.append(json.loads(line))
+    except Exception:
+        pass
+    return rows[-3:]
+
+
 def load_episodes():
     if not os.path.exists(UI_FILE):
         return []
@@ -827,6 +841,12 @@ def main():
                 </div>
                 <div style="margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#8B949E;">
                     SINK: {fab_mode} &bull; UPDATED: {upd_ts[-9:] if len(upd_ts) >= 9 else upd_ts}
+                </div>
+                <div style="margin-top:8px; background:#0B0F14; border:1px solid #1F2A37; border-radius:6px; padding:7px 9px;">
+                    <div style="font-size:9px; font-weight:700; letter-spacing:0.08em; color:#8B949E; text-transform:uppercase; margin-bottom:4px;">
+                        DIRECTOR AUDIT TRAIL (FABRIC LOG)
+                    </div>
+                    {"".join(f'<div style="font-family:JetBrains Mono,monospace; font-size:10px; color:#3FB950;">✔ {r.get("timestamp","")[-9:]} {r.get("episode_id","")} &rarr; {r.get("director_decision","")}</div>' for r in load_audit_trail()) or '<div style="font-family:JetBrains Mono,monospace; font-size:10px; color:#8B949E;">No manual override logged yet</div>'}
                 </div>
                 """),
                 unsafe_allow_html=True

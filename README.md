@@ -87,7 +87,7 @@ All **21 unit and regression tests** in `test_verifier.py` (14 Verifier v5.2 str
 | Model & Language Configuration | Pass@1 (First Try) | Pass@2 (After Rejection Retry) | Template Fallbacks | Median Latency (CPU) | Min / Max Latency |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Microsoft Phi-4-mini (English)** | `60.0%` (12/20) *(39–78%)* | **`100.0%` (20/20)** *(84–100%)* | `0 / 20` | `13.67s` | `7.19s / 24.79s` |
-| **Meta Llama 3.2 (English)** | `80.0%` (21/20) *(58–92%)* | **`90.0%` (18/20)** *(70–97%)* | `2 / 20` | `9.21s` | `6.63s / 28.95s` |
+| **Meta Llama 3.2 (English)** | `80.0%` (16/20) *(58–92%)* | **`90.0%` (18/20)** *(70–97%)* | `2 / 20` | `9.21s` | `6.63s / 28.95s` |
 | **Meta Llama 3.2 (French)** | `50.0%` (10/20) *(30–70%)* | **`75.0%` (15/20)** *(53–89%)* | `5 / 20` | `12.25s` | `6.24s / 23.71s` |
 
 *Key Finding:* Feeding the exact programmatic rejection reason back into the retry prompt raises **Microsoft Phi-4-mini** from `60.0%` Pass@1 to **`100.0%` Pass@2** (`20/20` verified, `0` fallbacks).
