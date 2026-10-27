@@ -1,3 +1,4 @@
+from test_insight_builder import ALL_INSIGHT_TESTS
 import asyncio
 import json
 import os

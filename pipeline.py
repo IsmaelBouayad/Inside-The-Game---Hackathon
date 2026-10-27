@@ -193,6 +193,7 @@ def coerce_color_payload(raw_text: str, trigger_ids: list, alarm: dict) -> Color
 
 
 def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
+    """Parses JSON structure without silently replacing invalid episode IDs."""
     clean_str = extract_json(raw_text)
     data = json.loads(clean_str)
     tc = data.get("tactical_color") or data.get("tactical_summary") or data.get("summary")
@@ -205,14 +206,9 @@ def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
     elif isinstance(raw_eps, list) and len(raw_eps) > 0:
         raw_list = [str(x) for x in raw_eps]
     else:
-        raw_list = episode_ids[:2]
+        raise ValueError("Missing key_episode_ids in recap payload")
 
-    valid_set = set(episode_ids)
-    clean_eps = [eid for eid in raw_list if eid in valid_set]
-    if not clean_eps and episode_ids:
-        clean_eps = episode_ids[:2]
-
-    return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=clean_eps)
+    return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=raw_list)
 
 
 def build_factual_core(alarm: dict, language: str = "English") -> str:

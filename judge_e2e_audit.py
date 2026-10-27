@@ -43,9 +43,9 @@ async def run_full_judge_audit():
     tests_ok = (res_tests.returncode == 0 and "21/21" in res_tests.stdout)
     judge.record(
         "1. Technical Implementation",
-        "Verifier v5.2 & Regression Unit Suite (21 tests)",
+        "Verifier & Tactical Impact Explorer Unit Suite",
         tests_ok,
-        "21/21 unit & regression tests passed" if tests_ok else f"Failed: {res_tests.stderr or res_tests.stdout[-200:]}"
+        "All unit & regression tests passed (test_verifier.py + test_insight_builder.py)" if tests_ok else f"Failed: {res_tests.stderr or res_tests.stdout[-200:]}"
     )
 
     forbidden_files = [".env", ".Rhistory", "project.txt", "check_llm.py", "diagnostic.py", "test_maf.py"]

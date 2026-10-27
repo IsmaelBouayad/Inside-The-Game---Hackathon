@@ -1,3 +1,4 @@
+import insight_builder
 import asyncio
 import html
 import json
@@ -458,42 +459,242 @@ def load_audit_trail():
 
 
 
-def render_player_spotlight(selected_club: str) -> str:
-    """Generates deterministic Player Spotlight metrics without modifying core engine logic."""
-    if selected_club == "Meteor City":
-        p_id = "M-02"
-        role = "STRIKER / MATCH WINNER"
-        goals = 2
-        acc = "100%"
-        desc = "Clinical brace (min 51', 79') exploiting space behind Nova FC's high block."
-    else:
-        p_id = "N-08"
-        role = "MIDFIELD PIVOT"
-        goals = 0
-        acc = "62%"
-        desc = "Target of pressing actions in defensive third; stabilized passing after min 62'."
+def render_player_spotlight(
+    selected_club: str,
+    player_id: str = None,
+    all_events: list = None,
+    episodes: list = None,
+    max_minute: int = None
+) -> str:
+    """Renders Player Spotlight strictly from computed match_events.jsonl telemetry (zero hardcoded stats or roles)."""
+    events = all_events if all_events is not None else insight_builder.load_match_events()
+    if not player_id:
+        club_players = insight_builder.list_match_players(events, team=selected_club, max_minute=max_minute)
+        player_id = club_players[0] if club_players else "Data unavailable"
+
+    sp = insight_builder.compute_player_spotlight(events, player_id, episodes=episodes, max_minute=max_minute)
+    p_esc = html.escape(str(player_id))
+    if sp.get("data_status") != "COMPUTED":
+        return compact_html(f"""
+        <div style="background:#141B24; border:1px solid #1F2A37; border-radius:8px; padding:10px 12px; margin-top:8px;">
+            <div style="font-size:10px; font-weight:700; letter-spacing:0.08em; color:#58A6FF; text-transform:uppercase;">
+                PLAYER SPOTLIGHT &bull; {p_esc}
+            </div>
+            <div style="font-size:11px; color:#8B949E; margin-top:4px;">Data unavailable for selected player in current match window.</div>
+        </div>
+        """)
+
+    chip_items = []
+    for e in sp.get("associated_events", [])[-4:]:
+        eid_s = html.escape(str(e.get("event_id", "")))
+        emin_s = e.get("minute", 0)
+        etyp_s = html.escape(str(e.get("event_type", "")))
+        chip_items.append(f'<span class="bc-chip" style="font-size:9.5px; padding:2px 5px;">{eid_s} ({emin_s}m {etyp_s})</span>')
+    ev_chips = "".join(chip_items)
+
+    pid_s = html.escape(str(sp["player_id"]))
+    tm_s = html.escape(str(sp["team"]))
+    tot_ev = sp["total_events"]
+    shots_s = sp["shots"]
+    goals_s = sp["goals"]
+    sconv_s = html.escape(str(sp["shot_conversion_display"]))
+    pacc_s = html.escape(str(sp["pass_accuracy_display"]))
+    def_s = sp["defensive_interventions"]
+    ep_inv_s = sp["tactical_episode_involvements"]
+    sum_s = html.escape(str(sp["evidence_summary"]))
 
     return compact_html(f"""
-    <div style="background:#141B24; border:1px solid #1F2A37; border-radius:8px; padding:10px 12px; margin-top:10px;">
+    <div style="background:#141B24; border:1px solid #1F2A37; border-radius:8px; padding:10px 12px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-size:10px; font-weight:700; letter-spacing:0.08em; color:#58A6FF; text-transform:uppercase;">
-                PLAYER SPOTLIGHT &bull; {p_id}
+                PLAYER SPOTLIGHT &bull; {pid_s} ({tm_s})
             </span>
             <span style="font-family:'JetBrains Mono',monospace; font-size:9px; background:#0B0F14; padding:2px 6px; border-radius:4px; color:#8B949E;">
-                {role}
+                EVENTS: {tot_ev}
             </span>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
-            <div style="background:#0B0F14; padding:6px 8px; border-radius:4px;">
-                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Goals</div>
-                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:#3FB950;">{goals}</div>
+            <div style="background:#0B0F14; padding:5px 7px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Shots / Goals</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#3FB950;">
+                    {shots_s} / {goals_s}
+                </div>
             </div>
-            <div style="background:#0B0F14; padding:6px 8px; border-radius:4px;">
-                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Shot Acc</div>
-                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:#E6EDF3;">{acc}</div>
+            <div style="background:#0B0F14; padding:5px 7px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Shot Conversion</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#E6EDF3;">
+                    {sconv_s}
+                </div>
+            </div>
+            <div style="background:#0B0F14; padding:5px 7px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Pass Accuracy</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#E6EDF3;">
+                    {pacc_s}
+                </div>
+            </div>
+            <div style="background:#0B0F14; padding:5px 7px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Def. Actions / Ep. Cited</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#58A6FF;">
+                    {def_s} / {ep_inv_s}
+                </div>
             </div>
         </div>
-        <div style="font-size:11px; color:#8B949E; line-height:1.35;">{desc}</div>
+        <div style="font-size:11px; color:#E6EDF3; line-height:1.35; margin-bottom:6px;">
+            {sum_s}
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px;">{ev_chips}</div>
+    </div>
+    """)
+
+
+def render_tactical_impact_explorer_html(insight: dict) -> str:
+    """Renders the deterministic TACTICAL IMPACT EXPLORER evidence panel in the main broadcast view."""
+    if not insight:
+        return ""
+    m_before = insight["metrics"]["before_press"]
+    m_during = insight["metrics"]["during_press"]
+    m_after = insight["metrics"]["after_press"]
+
+    b_opp = m_before.get("opponent_build_up_metrics", {})
+    d_opp = m_during.get("opponent_build_up_metrics", {})
+    b_prs = m_before.get("pressing_team_metrics", {})
+    d_prs = m_during.get("pressing_team_metrics", {})
+
+    comp_bd = insight["comparisons"]["before_vs_during"]
+    acc_delta = comp_bd.get("opponent_pass_accuracy_delta", {}).get("absolute_diff")
+    acc_delta_str = html.escape(f"{acc_delta:+.1f} pts" if acc_delta is not None else "Insufficient data")
+    prs_delta = comp_bd.get("pressing_actions_delta", {}).get("absolute_diff")
+    prs_delta_str = html.escape(f"{prs_delta:+.0f} actions" if prs_delta is not None else "Insufficient data")
+
+    ep_id_s = html.escape(str(insight.get("episode_id", "")))
+    tm_s = html.escape(str(insight.get("team", "")))
+    opp_s = html.escape(str(insight.get("opponent", "")))
+    ep_min_s = insight.get("match_minute", 0)
+
+    b0, b1 = m_before.get("window_bounds") or [0, 0]
+    b_suff = html.escape(str(m_before.get("sample_sufficiency", "")))
+    b_frac = html.escape(str(b_opp.get("pass_accuracy_fraction", "N/A")))
+    b_pct = b_opp.get("pass_accuracy_pct", "N/A")
+    b_def = b_prs.get("defensive_actions_total", 0)
+    b_p, b_t, b_i = b_prs.get("pressure_count", 0), b_prs.get("tackle_count", 0), b_prs.get("interception_count", 0)
+
+    d0, d1 = m_during.get("window_bounds") or [0, 0]
+    d_suff = html.escape(str(m_during.get("sample_sufficiency", "")))
+    d_frac = html.escape(str(d_opp.get("pass_accuracy_fraction", "N/A")))
+    d_pct = d_opp.get("pass_accuracy_pct", "N/A")
+    d_def = d_prs.get("defensive_actions_total", 0)
+    d_p, d_t, d_i = d_prs.get("pressure_count", 0), d_prs.get("tackle_count", 0), d_prs.get("interception_count", 0)
+
+    if m_after.get("status") == "COMPUTED":
+        a0, a1 = m_after.get("window_bounds") or [0, 0]
+        a_opp = m_after.get("opponent_build_up_metrics", {})
+        a_prs = m_after.get("pressing_team_metrics", {})
+        a_suff = html.escape(str(m_after.get("sample_sufficiency", "")))
+        a_frac = html.escape(str(a_opp.get("pass_accuracy_fraction", "N/A")))
+        a_pct = a_opp.get("pass_accuracy_pct", "N/A")
+        a_def = a_prs.get("defensive_actions_total", 0)
+        a_p, a_t, a_i = a_prs.get("pressure_count", 0), a_prs.get("tackle_count", 0), a_prs.get("interception_count", 0)
+        after_col = f"""
+        <div class="bc-pane">
+            <div class="bc-pane-head">
+                <span class="bc-pane-title">AFTER PRESS ({a0}m–{a1}m)</span>
+                <span class="bc-lang-tag">{a_suff}</span>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#E6EDF3;">
+                {opp_s} Passes: {a_frac} ({a_pct}%)<br/>
+                {tm_s} Def. Actions: {a_def} (P:{a_p} T:{a_t} I:{a_i})
+            </div>
+        </div>
+        """
+    else:
+        a_reason = html.escape(str(m_after.get("reason", "Post-press window unavailable.")))
+        after_col = f"""
+        <div class="bc-pane">
+            <div class="bc-pane-head">
+                <span class="bc-pane-title">AFTER PRESS WINDOW</span>
+                <span class="bc-lang-tag">NO FUTURE LEAKAGE</span>
+            </div>
+            <div style="font-size:12px; color:#8B949E;">{a_reason}</div>
+        </div>
+        """
+
+    facts_html = "".join(
+        f'<div style="font-size:12px; color:#E6EDF3; margin-bottom:3px;">&bull; <strong>[FACT]</strong> {html.escape(str(c["statement"]))}</div>'
+        for c in insight["allowed_claims"]["deterministic_facts"]
+    )
+    interps_html = "".join(
+        f'<div style="font-size:12px; color:#58A6FF; margin-bottom:3px;">&bull; <strong>[INTERPRETATION - {html.escape(str(c["confidence"]))}]</strong> {html.escape(str(c["statement"]))}</div>'
+        for c in insight["allowed_claims"]["tactical_interpretations"]
+    )
+    hyps_html = "".join(
+        f'<div style="font-size:12px; color:#E3B341; margin-bottom:3px;">&bull; <strong>[HYPOTHESIS]</strong> {html.escape(str(c["statement"]))}</div>'
+        for c in insight["allowed_claims"]["hypotheses"]
+    )
+
+    chrono_list = []
+    for ev in insight.get("chronology", [])[-6:]:
+        cid_s = html.escape(str(ev.get("event_id", "")))
+        cmin_s = ev.get("minute", 0)
+        ctm_s = html.escape(str(ev.get("team", "")))
+        ctyp_s = html.escape(str(ev.get("event_type", "")))
+        cout_s = html.escape(str(ev.get("outcome", "")))
+        chrono_list.append(f'<span class="bc-chip">{cid_s} ({cmin_s}m {ctm_s} {ctyp_s}:{cout_s})</span>')
+    chrono_chips = "".join(chrono_list)
+
+    lim_txt = " | ".join(html.escape(str(l)) for l in insight.get("limitations", []))
+
+    return compact_html(f"""
+    <div class="bc-card" style="border-color:#2EA043;">
+        <div class="bc-card-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="bc-badge badge-final"><span class="bc-dot"></span>TACTICAL IMPACT EXPLORER (EVIDENCE PANEL)</span>
+                <span style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#E6EDF3;">
+                    {ep_id_s} &bull; {tm_s} pressing {opp_s} (MIN {ep_min_s}m)
+                </span>
+            </div>
+            <div class="bc-card-meta">
+                <span>PASS ACC DELTA: {acc_delta_str}</span>
+                <span>PRESSING DELTA: {prs_delta_str}</span>
+            </div>
+        </div>
+        <div class="bc-grid-3" style="margin-bottom:12px;">
+            <div class="bc-pane">
+                <div class="bc-pane-head">
+                    <span class="bc-pane-title">BEFORE PRESS ({b0}m–{b1}m)</span>
+                    <span class="bc-lang-tag">{b_suff}</span>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#E6EDF3;">
+                    {opp_s} Passes: {b_frac} ({b_pct}%)<br/>
+                    {tm_s} Def. Actions: {b_def} (P:{b_p} T:{b_t} I:{b_i})
+                </div>
+            </div>
+            <div class="bc-pane">
+                <div class="bc-pane-head">
+                    <span class="bc-pane-title">DURING PRESS ({d0}m–{d1}m)</span>
+                    <span class="bc-lang-tag">{d_suff}</span>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#E6EDF3;">
+                    {opp_s} Passes: {d_frac} ({d_pct}%)<br/>
+                    {tm_s} Def. Actions: {d_def} (P:{d_p} T:{d_t} I:{d_i})
+                </div>
+            </div>
+            {after_col}
+        </div>
+        <div style="background:#0B0F14; border:1px solid #1F2A37; border-radius:8px; padding:10px 14px; margin-bottom:10px;">
+            <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E; margin-bottom:6px;">
+                ALLOWED CLAIMS &amp; PROVENANCE LEDGER (FACTS VS INTERPRETATIONS VS HYPOTHESES)
+            </div>
+            {facts_html}
+            {interps_html}
+            {hyps_html}
+        </div>
+        <div class="bc-chip-row">
+            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E;">ASSOCIATED EVENT CHRONOLOGY:</span>
+            {chrono_chips}
+        </div>
+        <div style="font-size:10.5px; color:#8B949E; margin-top:8px;">
+            <strong>DATA QUALITY &amp; LIMITATIONS:</strong> {lim_txt}
+        </div>
     </div>
     """)
 
@@ -818,7 +1019,16 @@ def main():
         horizontal=True,
         label_visibility="collapsed"
     )
-    st.sidebar.markdown(render_player_spotlight(selected_club), unsafe_allow_html=True)
+    all_raw_events = insight_builder.load_match_events()
+    club_players = insight_builder.list_match_players(all_raw_events, team=selected_club)
+    default_idx = club_players.index("M-02") if "M-02" in club_players else (club_players.index("M-11") if "M-11" in club_players else 0)
+    selected_player = st.sidebar.selectbox(
+        "Player Spotlight Selector",
+        options=club_players if club_players else ["Data unavailable"],
+        index=default_idx if club_players else 0,
+        label_visibility="collapsed"
+    )
+    sidebar_spotlight = st.sidebar.empty()
 
     st.sidebar.markdown('<div class="sb-section-title">2. DIRECTOR CONSOLE (HUMAN-IN-THE-LOOP)</div>', unsafe_allow_html=True)
     sidebar_preview = st.sidebar.empty()
@@ -863,6 +1073,13 @@ def main():
 
         tactical_eps = [e for e in episodes if "ENTERED" in e.get("episode_id", "") or "EXITED" in e.get("episode_id", "")]
         target_ep = tactical_eps[-1] if tactical_eps else (episodes[-1] if episodes else None)
+
+        with sidebar_spotlight.container():
+            cutoff_m = display_min if display_min > 0 else 90
+            st.markdown(
+                render_player_spotlight(selected_club, selected_player, all_raw_events, episodes, max_minute=cutoff_m),
+                unsafe_allow_html=True
+            )
 
         with sidebar_preview.container():
             if target_ep:
@@ -953,6 +1170,11 @@ def main():
         mom_svg = build_momentum_svg(clock.get("momentum_history", []), episodes, peak)
         if mom_svg:
             sections_html.append(mom_svg)
+
+        if target_ep:
+            cutoff_m = display_min if display_min > 0 else 90
+            ep_insight = insight_builder.build_episode_insight(target_ep, all_raw_events, current_minute=cutoff_m, score=score)
+            sections_html.append(render_tactical_impact_explorer_html(ep_insight))
 
         if recap:
             r_head = html.escape(strip_non_ascii_symbols(recap.get("headline", "")))

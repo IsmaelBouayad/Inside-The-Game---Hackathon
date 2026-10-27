@@ -29,7 +29,7 @@ jobs:
 
       - name: Run Verifier v5.2 & Regression Unit Suite (21 Tests)
         run: |
-          pytest test_verifier.py -v
+          pytest test_verifier.py test_insight_builder.py -v
           python3 test_verifier.py
 
       - name: Generate Seed 42 Match Telemetry & Verify Ground Truth
