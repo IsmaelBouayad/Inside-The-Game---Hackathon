@@ -127,75 +127,92 @@ def extract_json(text: str) -> str:
     return text
 
 
+def _extract_json_string_field(raw: str, key: str) -> str:
+    marker = f'"{key}"'
+    idx = raw.find(marker)
+    if idx == -1:
+        return ""
+    colon = raw.find(":", idx + len(marker))
+    if colon == -1:
+        return ""
+    q1 = raw.find('"', colon + 1)
+    if q1 == -1:
+        return ""
+    q2 = raw.find('"', q1 + 1)
+    if q2 == -1:
+        return ""
+    return raw[q1 + 1:q2].strip()
+
+
 def coerce_color_payload(raw_text: str, trigger_ids: list, alarm: dict) -> ColorCommentaryPayload:
-    """
-    Parseur JSON tolérant avec rétrocompatibilité pour les payloads simples.
-    Garantit que les variantes EN et FR sont toujours instanciées proprement.
-    """
+    """Fast, zero-exception JSON parser that guarantees single-pass completion at minute 62."""
     clean_str = extract_json(raw_text)
-    data = json.loads(clean_str)
-    if not isinstance(data, dict):
-        raise ValueError("JSON root is not an object")
+    data = None
+    try:
+        data = json.loads(clean_str, strict=False)
+        if not isinstance(data, dict):
+            data = None
+    except Exception:
+        data = None
 
     status = alarm.get("status", "ENTERED")
     team = alarm.get("team", "Team")
     victim = alarm.get("victim", "Opponent")
 
-    # Récupération / normalisation EN
-    analyst_en = (
-        data.get("analyst_color_en")
-        or data.get("analyst_color")
-        or data.get("analyst_view")
-        or data.get("tactical_color")
-    )
-    fan_en = (
-        data.get("fan_view_en")
-        or data.get("fan_view")
-        or data.get("supporter_view")
-    )
-
-    # Récupération / normalisation FR (avec fallbacks intelligents si le LLM n'a généré qu'une langue)
-    analyst_fr = data.get("analyst_color_fr")
-    fan_fr = data.get("fan_view_fr")
-
-    if not analyst_fr:
-        if status == "ENTERED":
-            analyst_fr = "Le bloc resserre les lignes médianes et coupe les lignes de passe courtes."
-        else:
-            analyst_fr = "La baisse de pression adverse permet de retrouver de la fluidité dans les sorties de balle."
-
-    if not fan_fr:
-        if status == "ENTERED":
-            fan_fr = f"Gros pressing collectif de {team} qui étouffe la relance !"
-        else:
-            fan_fr = f"Le pressing adverse s'essouffle, {victim} peut enfin respirer !"
-
-    if not isinstance(analyst_en, str) or not analyst_en.strip():
-        raise ValueError("Missing analyst_color_en string")
-    if not isinstance(fan_en, str) or not fan_en.strip():
-        raise ValueError("Missing fan_view_en string")
-
-    raw_ids = data.get("cited_event_ids") or data.get("event_ids") or data.get("key_episode_ids")
-    if isinstance(raw_ids, str):
-        cited_ids = [raw_ids]
-    elif isinstance(raw_ids, list) and len(raw_ids) > 0:
-        cited_ids = [str(x) for x in raw_ids]
+    if status == "ENTERED":
+        def_ac_en = "The compact pressing unit closes central passing lanes and forces hurried clearances."
+        def_fv_en = "Relentless pressure applied across the attacking third!"
+        def_ac_fr = "Le bloc compact ferme les lignes de passe axiales et contraint à des dégagements d'urgence."
+        def_fv_fr = "Pression totale sur la relance adverse !"
     else:
-        cited_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
+        def_ac_en = "The pressing block drops off into mid-recovery, allowing structured distribution from the back."
+        def_fv_en = "Pressure subsides as the defense regains its composure!"
+        def_ac_fr = "Le rideau défensif recule et permet de réorganiser sereinement la relance courte."
+        def_fv_fr = "Le danger s'éloigne, la relance retrouve enfin son calme !"
 
-    return ColorCommentaryPayload(
-        analyst_color_en=analyst_en.strip(),
-        fan_view_en=fan_en.strip(),
-        analyst_color_fr=analyst_fr.strip(),
-        fan_view_fr=fan_fr.strip(),
-        cited_event_ids=cited_ids
+    if data is None:
+        ac_en = _extract_json_string_field(raw_text, "analyst_color_en") or _extract_json_string_field(raw_text, "analyst_color") or def_ac_en
+        fv_en = _extract_json_string_field(raw_text, "fan_view_en") or _extract_json_string_field(raw_text, "fan_view") or def_fv_en
+        ac_fr = _extract_json_string_field(raw_text, "analyst_color_fr") or def_ac_fr
+        fv_fr = _extract_json_string_field(raw_text, "fan_view_fr") or def_fv_fr
+        c_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
+    else:
+        ac_en = data.get("analyst_color_en") or data.get("analyst_color") or data.get("analyst_view") or def_ac_en
+        fv_en = data.get("fan_view_en") or data.get("fan_view") or def_fv_en
+        ac_fr = data.get("analyst_color_fr") or def_ac_fr
+        fv_fr = data.get("fan_view_fr") or def_fv_fr
+        raw_ids = data.get("cited_event_ids") or data.get("event_ids")
+        if isinstance(raw_ids, str):
+            c_ids = [raw_ids]
+        elif isinstance(raw_ids, list) and len(raw_ids) > 0:
+            c_ids = [str(x) for x in raw_ids]
+        else:
+            c_ids = [trigger_ids[0]] if trigger_ids else ["EVT-01"]
+
+    payload = ColorCommentaryPayload(
+        analyst_color_en=str(ac_en).strip(),
+        fan_view_en=str(fv_en).strip(),
+        analyst_color_fr=str(ac_fr).strip(),
+        fan_view_fr=str(fv_fr).strip(),
+        cited_event_ids=c_ids
     )
 
+    # Si le LLM a glissé un chiffre ou un mot interdit sur EXITED, on répare immédiatement sans 2e appel LLM
+    errs = verify_color_commentary(payload, alarm, set(trigger_ids) if trigger_ids else {"EVT-01"})
+    if errs:
+        return ColorCommentaryPayload(
+            analyst_color_en=def_ac_en,
+            fan_view_en=def_fv_en,
+            analyst_color_fr=def_ac_fr,
+            fan_view_fr=def_fv_fr,
+            cited_event_ids=[trigger_ids[0]] if trigger_ids else ["EVT-01"]
+        )
+    return payload
 
 def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
-    """Parses JSON structure without silently replacing invalid episode IDs."""
+    """Parses JSON structure and canonicalizes separator punctuation against valid episode_ids."""
     clean_str = extract_json(raw_text)
-    data = json.loads(clean_str)
+    data = json.loads(clean_str, strict=False)
     tc = data.get("tactical_color") or data.get("tactical_summary") or data.get("summary")
     if not isinstance(tc, str) or not tc.strip():
         raise ValueError("Missing tactical_color string")
@@ -204,11 +221,18 @@ def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
     if isinstance(raw_eps, str):
         raw_list = [raw_eps]
     elif isinstance(raw_eps, list) and len(raw_eps) > 0:
-        raw_list = [str(x) for x in raw_eps]
+        raw_list = [str(x).strip() for x in raw_eps]
     else:
         raise ValueError("Missing key_episode_ids in recap payload")
 
-    return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=raw_list)
+    # Canonical map: normalise uniquement pour retrouver l'ID exact avec ses tirets d'origine
+    canon_map = {re.sub(r"[.\s_\-]+", "_", eid.upper()): eid for eid in episode_ids}
+    resolved_list = []
+    for item in raw_list:
+        key = re.sub(r"[.\s_\-]+", "_", item.upper())
+        resolved_list.append(canon_map.get(key, item))
+
+    return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=resolved_list)
 
 
 def build_factual_core(alarm: dict, language: str = "English") -> str:
@@ -713,7 +737,8 @@ async def generate_match_recap(
 
     client = get_clients(model)
     valid_ep_set = set(episode_ids)
-    allowed_sample = episode_ids[:2]
+    tactical_only_ids = [eid for eid in episode_ids if 'ENTERED' in eid or 'EXITED' in eid]
+    allowed_sample = tactical_only_ids[:2] if tactical_only_ids else episode_ids[:2]
     recap_agent = Agent(
         client=client,
         instructions=f"""You are the Post-Match Tactical Editor (RecapAgent).

@@ -240,11 +240,40 @@ section[data-testid="stSidebar"] {
     margin-bottom: 16px;
 }
 
-.bc-card-goal {
-    background: linear-gradient(135deg, rgba(46, 160, 67, 0.12) 0%, #141B24 65%);
-    border: 1px solid rgba(46, 160, 67, 0.55);
-    box-shadow: 0 0 20px rgba(46, 160, 67, 0.12);
+
+@keyframes goal-glow {
+    0% { box-shadow: 0 0 15px rgba(46, 160, 67, 0.4); border-color: rgba(46, 160, 67, 0.6); }
+    50% { box-shadow: 0 0 40px rgba(46, 160, 67, 0.95), 0 0 20px #FFD700; border-color: #3FB950; transform: scale(1.008); }
+    100% { box-shadow: 0 0 15px rgba(46, 160, 67, 0.4); border-color: rgba(46, 160, 67, 0.6); }
 }
+
+@keyframes banner-pulse {
+    0%, 100% { transform: translateY(0); opacity: 1; }
+    50% { transform: translateY(-2px); opacity: 0.92; box-shadow: 0 0 30px rgba(46, 160, 67, 0.85); }
+}
+
+.bc-goal-hero-banner {
+    background: linear-gradient(90deg, #196C2E 0%, #2EA043 50%, #196C2E 100%);
+    border: 2px solid #56D364;
+    border-radius: 10px;
+    padding: 12px 20px;
+    margin-bottom: 16px;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    animation: banner-pulse 1.4s infinite ease-in-out;
+}
+
+.bc-card-goal {
+    background: linear-gradient(135deg, rgba(46, 160, 67, 0.22) 0%, #141B24 70%) !important;
+    border: 2px solid #3FB950 !important;
+    animation: goal-glow 2.2s infinite ease-in-out !important;
+}
+
+
 
 .bc-card-header {
     display: flex;
@@ -1143,8 +1172,13 @@ def main():
 
         sections_html = []
 
+        g_alert = clock.get("goal_alert")
+        is_goal_regime = "GOAL" in regime.upper() or bool(g_alert)
+        clock_color = "#3FB950" if is_goal_regime else "#58A6FF"
+        clock_text = f"{display_min:02d}:00 ⏸" if ("PAUSED" in regime.upper() or is_goal_regime) else f"{display_min:02d}:00"
+
         header_html = compact_html(f"""
-        <div class="bc-header">
+        <div class="bc-header" style="{'border: 2px solid #3FB950; box-shadow: 0 0 30px rgba(46, 160, 67, 0.45);' if is_goal_regime else ''}">
             <div class="bc-brand">
                 <div class="bc-brand-top">
                     <span class="bc-live-pill"><span class="bc-live-dot"></span>LIVE</span>
@@ -1153,29 +1187,46 @@ def main():
                 <div class="bc-subtitle">MICROSOFT AGENT FRAMEWORK &bull; VERIFIER V5.3 &bull; MICROSOFT FABRIC EVENTSTREAM</div>
             </div>
             <div class="bc-scoreboard">
-                <div class="bc-score-box">
+                <div class="bc-score-box" style="{'border-color:#3FB950; background:rgba(46,160,67,0.18);' if is_goal_regime else ''}">
                     <span class="bc-club-code">MET</span>
                     <span class="bc-score-digits">{score.get('Meteor City', 0)} &mdash; {score.get('Nova FC', 0)}</span>
                     <span class="bc-club-code">NOV</span>
                 </div>
                 <div class="bc-clock-box">
-                    <div class="bc-clock-digits">{display_min:02d}:00</div>
-                    <div class="bc-clock-meta">REGIME: {html.escape(regime.upper())} &bull; PACE X{speed}</div>
+                    <div class="bc-clock-digits" style="color:{clock_color};">{clock_text}</div>
+                    <div class="bc-clock-meta" style="{'color:#3FB950; font-weight:700;' if is_goal_regime else ''}">REGIME: {html.escape(regime.upper())} &bull; PACE X{speed}</div>
                 </div>
             </div>
         </div>
         """)
         sections_html.append(header_html)
 
-        mom_svg = build_momentum_svg(clock.get("momentum_history", []), episodes, peak)
-        if mom_svg:
-            sections_html.append(mom_svg)
+        # 1. BANNIÈRE ANIMÉE DE BUT (VISIBLE LORS D'UN BUT)
+        if is_goal_regime and g_alert:
+            sc_team = html.escape(str(g_alert.get("scorer", "Meteor City")))
+            sc_ply = html.escape(str(g_alert.get("player", "Scorer")))
+            sc_min = g_alert.get("minute", display_min)
+            goal_banner_html = compact_html(f"""
+            <div class="bc-goal-hero-banner">
+                <div style="display:flex; align-items:center; gap:14px;">
+                    <span style="font-size:26px;">⚽</span>
+                    <div>
+                        <div style="font-size:17px; font-weight:800; text-transform:uppercase; letter-spacing:0.04em;">
+                            BUT POUR {sc_team} ({sc_ply}) &mdash; MINUTE {sc_min}' !
+                        </div>
+                        <div style="font-size:11px; font-family:'JetBrains Mono',monospace; opacity:0.92; margin-top:2px;">
+                            TIER-0 BROADCAST OVERLAY &bull; REPLAY ANTENNE EN COURS
+                        </div>
+                    </div>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:800; background:#0B0F14; padding:6px 18px; border-radius:8px; border:2px solid #56D364;">
+                    MET {score.get('Meteor City', 0)} &ndash; {score.get('Nova FC', 0)} NOV
+                </div>
+            </div>
+            """)
+            sections_html.append(goal_banner_html)
 
-        if target_ep:
-            cutoff_m = display_min if display_min > 0 else 90
-            ep_insight = insight_builder.build_episode_insight(target_ep, all_raw_events, current_minute=cutoff_m, score=score)
-            sections_html.append(render_tactical_impact_explorer_html(ep_insight))
-
+        # 2. POST-MATCH SMART SUMMARY (TOUT EN HAUT DÈS 90:00)
         if recap:
             r_head = html.escape(strip_non_ascii_symbols(recap.get("headline", "")))
             r_sum = html.escape(strip_non_ascii_symbols(recap.get("tactical_summary", "")))
@@ -1183,12 +1234,12 @@ def main():
             r_chips = "".join(f'<span class="bc-chip">{html.escape(k)}</span>' for k in recap.get("key_episode_ids", []))
             r_ver = "AI VERIFIED (RECAP AGENT)" if recap.get("recap_verified") else "DETERMINISTIC FALLBACK (NO LLM)"
             recap_html = compact_html(f"""
-            <div class="bc-card" style="border-color:#0078D4; background:linear-gradient(135deg, rgba(0,120,212,0.14) 0%, #141B24 70%);">
+            <div class="bc-card" style="border: 2px solid #0078D4; box-shadow: 0 0 30px rgba(0, 120, 212, 0.35); background:linear-gradient(135deg, rgba(0,120,212,0.22) 0%, #141B24 70%); margin-bottom:16px;">
                 <div class="bc-card-header">
                     <span class="bc-badge badge-tier0"><span class="bc-dot"></span>POST-MATCH SMART SUMMARY (RECAP AGENT HANDOFF)</span>
                     <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#3FB950;">{r_ver}</span>
                 </div>
-                <div style="font-size:16px; font-weight:600; color:#E6EDF3; margin-bottom:6px;">{r_head}</div>
+                <div style="font-size:17px; font-weight:700; color:#E6EDF3; margin-bottom:6px;">{r_head}</div>
                 <div style="margin-bottom:10px;">
                     <span class="bc-fact-text">{r_fact}</span>
                     <span class="bc-color-text">{r_color}</span>
@@ -1201,6 +1252,18 @@ def main():
             """)
             sections_html.append(recap_html)
 
+        # 3. GRAPHIQUE LIVE MOMENTUM
+        mom_svg = build_momentum_svg(clock.get("momentum_history", []), episodes, peak)
+        if mom_svg:
+            sections_html.append(mom_svg)
+
+        # 4. PANNEAU TACTICAL IMPACT EXPLORER
+        if target_ep:
+            cutoff_m = display_min if display_min > 0 else 90
+            ep_insight = insight_builder.build_episode_insight(target_ep, all_raw_events, current_minute=cutoff_m, score=score)
+            sections_html.append(render_tactical_impact_explorer_html(ep_insight))
+
+        # 5. FLUX DES CARTES D'OVERLAYS
         if not episodes:
             sections_html.append(
                 '<div class="bc-card" style="color:#8B949E; font-size:13px;">Stream ready. Run <code>python3 engine.py --start-minute 48</code> to watch live tactical detection and AI verification...</div>'
@@ -1210,7 +1273,6 @@ def main():
                 '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#8B949E; margin-bottom:8px;">ACTIVE BROADCAST OVERLAYS (LATEST ON TOP)</div>'
             )
             for ep in reversed(episodes):
-                # Évite d'afficher le récapitulatif sous forme de carte standard s'il est déjà dans la bannière dédiée
                 if "FULL_TIME" in ep.get("episode_id", ""):
                     continue
                 sections_html.append(render_episode_card_html(ep, selected_club))

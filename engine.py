@@ -48,7 +48,7 @@ def event_clock_sec(ev: dict) -> int:
     return int(ev["minute"]) * 60
 
 
-def update_clock(minute, score, tactical_state, current_speed, momentum_history=None, peak_swing=None):
+def update_clock(minute, score, tactical_state, current_speed, momentum_history=None, peak_swing=None, goal_alert=None):
     data = {
         "minute": minute,
         "score": score,
@@ -56,6 +56,7 @@ def update_clock(minute, score, tactical_state, current_speed, momentum_history=
         "current_speed": current_speed,
         "momentum_history": (momentum_history or [])[-30:],
         "peak_swing": peak_swing or {},
+        "goal_alert": goal_alert,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     }
     with open(CLOCK_FILE, "w", encoding="utf-8") as f:
@@ -175,8 +176,8 @@ async def match_engine(
     llm_timeout=None,
     start_minute=None
 ):
-    speed = float(speed or os.environ.get("MATCH_SPEED", 150.0))
-    tactical_speed = float(os.environ.get("TACTICAL_SPEED", 2.0))
+    speed = float(speed or os.environ.get("MATCH_SPEED", 240.0))
+    tactical_speed = float(os.environ.get("TACTICAL_SPEED", 14.0))
     dynamic_pacing = os.environ.get("DYNAMIC_PACING", "1") == "1"
     llm_timeout = float(llm_timeout or os.environ.get("LLM_TIMEOUT", 45.0))
     start_min = int(start_minute if start_minute is not None else os.environ.get("START_MINUTE", 0))
@@ -256,8 +257,10 @@ async def match_engine(
             metrics.events += 1
             state_tracker["current_minute"] = event["minute"]
 
+            # BUT TIER-0 : Narration + Pause chrono de 3.5s protégée
             if event.get("event_type") == "Shot" and event.get("outcome") == "Goal":
                 scorer = event["team"]
+                player_name = event.get("player_id", "Player")
                 score[scorer] = score.get(scorer, 0) + 1
                 metrics.goals += 1
                 state_tracker["latest_seq"] += 1
@@ -267,15 +270,28 @@ async def match_engine(
                 verified_overlays.append(goal_ov)
                 schedule_fabric_send("GOAL_TIER0", goal_ov)
                 metrics.dump(fabric)
-                print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {scorer} ({score})")
+                print(f"\n⚽ [TIER-0 GOAL] Minute {event['minute']} — {player_name} ({scorer}) Score: {score}")
+
+                g_alert = {"scorer": scorer, "player": player_name, "minute": event["minute"], "score": dict(score)}
+                state_tracker["active_goal_alert"] = g_alert
+                update_clock(
+                    event["minute"], score, "GOAL CELEBRATION (CLOCK PAUSED)", 0.0,
+                    detector.momentum_history, detector.peak_swing, goal_alert=g_alert
+                )
+                await asyncio.sleep(2.2)
+                last_printed_min = event["minute"]
 
             alarm = detector.process_event(event)
 
             if event["minute"] != last_printed_min:
                 last_printed_min = event["minute"]
+                g_alert_keep = state_tracker.get("active_goal_alert")
+                if g_alert_keep and (event["minute"] - g_alert_keep["minute"]) > 2:
+                    g_alert_keep = None
+                    state_tracker["active_goal_alert"] = None
                 update_clock(
                     event["minute"], score, detector.state, active_speed,
-                    detector.momentum_history, detector.peak_swing
+                    detector.momentum_history, detector.peak_swing, goal_alert=g_alert_keep
                 )
                 metrics.dump(fabric)
 
