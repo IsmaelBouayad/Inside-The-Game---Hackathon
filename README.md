@@ -2,7 +2,15 @@
 
 [![InsideTheGame CI](https://github.com/IsmaelBouayad/Inside-The-Game---Hackathon/actions/workflows/ci.yml/badge.svg)](https://github.com/IsmaelBouayad/Inside-The-Game---Hackathon/actions)
 
+## 📺 Live Demo Video (< 2 min)
+
+[![Inside The Game Demo](https://img.youtube.com/vi/TON_ID_YOUTUBE/maxresdefault.jpg)](https://youtu.be/TON_ID_YOUTUBE)
+
+> **Direct Video Link:** [Watch the 90s Broadcast Control Room Demo](https://youtu.be/4l2jNfuWMtw)  
+> *Demonstrating deterministic tactical shift detection, multi-agent AI verification (Llama 3.2), live Human-in-the-Loop director control, and post-match recap generation.*
+
 **Real-Time Tactical Momentum Shift Detection, Multi-Audience Split-Screen Overlays, and Programmatic LLM Verification with Microsoft Agent Framework & Microsoft Fabric**
+
 
 ---
 
