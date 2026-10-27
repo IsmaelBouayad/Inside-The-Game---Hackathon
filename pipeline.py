@@ -201,10 +201,15 @@ def coerce_recap_payload(raw_text: str, episode_ids: list) -> MatchRecapPayload:
 
     raw_eps = data.get("key_episode_ids") or data.get("cited_event_ids")
     if isinstance(raw_eps, str):
-        clean_eps = [raw_eps]
+        raw_list = [raw_eps]
     elif isinstance(raw_eps, list) and len(raw_eps) > 0:
-        clean_eps = [str(x) for x in raw_eps]
+        raw_list = [str(x) for x in raw_eps]
     else:
+        raw_list = episode_ids[:2]
+
+    valid_set = set(episode_ids)
+    clean_eps = [eid for eid in raw_list if eid in valid_set]
+    if not clean_eps and episode_ids:
         clean_eps = episode_ids[:2]
 
     return MatchRecapPayload(tactical_color=tc.strip(), key_episode_ids=clean_eps)
@@ -729,13 +734,20 @@ Reply with ONLY raw valid JSON:
 }}"""
     )
 
-    recap_prompt = "Synthesize post-match tactical color without any numbers. Output ONLY valid JSON."
+    recap_prompt = (
+        f"Provide a 1-sentence tactical conclusion in {language} focusing exclusively on spatial shape and pressing intensity. "
+        f"Do NOT mention scores, goals, players, or minutes. Zero digits allowed. "
+        f"Include key_episode_ids: {json.dumps(allowed_sample)}."
+    )
     for attempt in range(2):
         try:
-            res = await asyncio.wait_for(recap_agent.run(recap_prompt), timeout=25.0)
+            t0 = time.monotonic()
+            res = await asyncio.wait_for(recap_agent.run(recap_prompt), timeout=35.0)
+            duration = round(time.monotonic() - t0, 1)
             parsed = coerce_recap_payload(res.text, episode_ids)
             errs = verify_recap_output(parsed, valid_ep_set)
             if not errs:
+                print(f"   ✅ [RecapAgent] Post-match color verified in {duration}s")
                 return {
                     "headline": headline,
                     "tactical_summary": f"{factual_summary} {parsed.tactical_color}".strip(),
@@ -745,15 +757,19 @@ Reply with ONLY raw valid JSON:
                     "recap_verified": True,
                     "verification_mode": "llm_verified"
                 }
+            print(f"   ⚠️ [RecapAgent Rejected]: {' | '.join(errs)}")
             recap_prompt = (
-                f"REJECTED: {' | '.join(errs)}. Write ZERO digits and ZERO number words. Reply ONLY with JSON:\n"
-                f'{{"tactical_color": "Collective spatial discipline across transition phases dictated the tempo.", '
+                f"REJECTED: {' | '.join(errs)}\n"
+                f"Write ZERO digits and ZERO number words. Do not mention score, goals, or time.\n"
+                f"Reply with ONLY valid JSON matching schema:\n"
+                f'{{"tactical_color": "Disciplined collective spacing across transition phases dictated the rhythm of play.", '
                 f'"key_episode_ids": {json.dumps(allowed_sample)}}}'
             )
         except Exception as e:
+            print(f"   ⚠️ [RecapAgent Format/Timeout Error]: {type(e).__name__}")
             recap_prompt = (
                 f"Format error ({type(e).__name__}). Reply ONLY with valid JSON:\n"
-                f'{{"tactical_color": "Collective spatial discipline across transition phases dictated the tempo.", '
+                f'{{"tactical_color": "Disciplined collective spacing across transition phases dictated the rhythm of play.", '
                 f'"key_episode_ids": {json.dumps(allowed_sample)}}}'
             )
 

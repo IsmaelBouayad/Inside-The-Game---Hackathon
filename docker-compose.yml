@@ -15,7 +15,7 @@ services:
     image: ollama/ollama:latest
     environment:
       - OLLAMA_HOST=http://ollama:11434
-    entrypoint: ["ollama", "pull", "llama3.2"]
+    entrypoint: ["sh", "-c", "ollama pull $${OLLAMA_MODEL:-llama3.2}"]
     depends_on:
       ollama:
         condition: service_healthy

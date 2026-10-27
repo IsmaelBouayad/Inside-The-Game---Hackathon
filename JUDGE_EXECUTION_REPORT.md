@@ -1,8 +1,8 @@
 # Automated Hackathon Judge — End-to-End Execution Report
 
-- **Execution Timestamp (UTC):** `2026-10-25T17:35:01Z`
-- **Git Commit (HEAD) & Seed:** `8098910` | `Seed 42 (min 48..90)`
-- **Total Audit Duration:** `99.25s`
+- **Execution Timestamp (UTC):** `2026-10-27T07:46:14Z`
+- **Git Commit (HEAD) & Seed:** `736c87b` | `Seed 42 (min 48..90)`
+- **Total Audit Duration:** `97.79s`
 - **Overall Verification Score:** **`10 / 10 Checks Passed (100%)`**
 
 ## 1. End-to-End Verification Matrix
@@ -14,8 +14,8 @@
 | 2. Data & Detector | Seed 42 Ground Truth & Realism | **PASS** | Pass Acc: 89.7%, Score: {'Meteor City': 2, 'Nova FC': 0}, True Press Window: min 52..64 |
 | 2. Data & Detector | Control Match Silence Across All Control Seeds in 1..30 | **PASS** | 0 false alarms across all 10 control seeds ([2, 4, 9, 12, 16, 20, 22, 24, 25, 28]) |
 | 2. Data & Detector | Independent Outcome Generalization (Both Nova FC Win AND Draw Verified) | **PASS** | Nova FC win verified on seeds [1, 6, 9]; Draw verified on seeds [3, 5, 7] |
-| 3. Live Agentic Pipeline | In-Place DRAFT -> FINAL (AI Verified) Upgrade on All Tactical Alarms | **PASS** | Upgraded episodes: ['m_42_min57_ENTERED', 'm_42_min62_EXITED'] (llm_verified=2/2, median_latency=12.36s) |
-| 3. Live Agentic Pipeline | Strict ISO-8601 Timestamp Validity (including minute >= 60) | **PASS** | All 7 emitted overlay lines have valid ISO-8601 timestamps |
+| 3. Live Agentic Pipeline | In-Place DRAFT -> FINAL (AI Verified) Upgrade on All Tactical Alarms | **PASS** | Upgraded episodes: ['m_42_min57_ENTERED', 'm_42_min62_EXITED'] (llm_verified=2/2, median_latency=13.7s) |
+| 3. Live Agentic Pipeline | Strict ISO-8601 Timestamp Validity (including minute >= 60) | **PASS** | All 6 emitted overlay lines have valid ISO-8601 timestamps |
 | 4. UX & Multi-Audience | Uncontaminated Bilingual Split-Screen (EN & FR Verified in Both Modes) | **PASS** | EN feed starts with 'At minute 57' and FR feed starts with 'À la 57e minute' without cross-contamination |
 | 4. UX & Multi-Audience | Verified RecapAgent Handoff & Causal Detection Wording | **PASS** | recap_verified=True, causal wording verified ('first confirmed by the causal detector at minute 57') |
 | 5. Enterprise & Fabric | Director Hold/Approve State Transitions & Fabric Delivery Accounting | **PASS** | Director states verified ('🛑 HELD BY DIRECTOR (Withdrawn from Air)' -> '📡 ON-AIR (Director Approved)') | Fabric live_sends=8, local_fallbacks=0 |
@@ -35,9 +35,9 @@
   "fabric_delivery_mode": "fabric_eventstream_live",
   "fabric_live_sends_succeeded": 8,
   "fabric_local_fallbacks": 0,
-  "llm_latency_sec_median": 12.36,
-  "llm_latency_sec_max": 13.04,
-  "last_updated_utc": "2026-10-25T17:34:44Z"
+  "llm_latency_sec_median": 13.7,
+  "llm_latency_sec_max": 14.19,
+  "last_updated_utc": "2026-10-27T07:46:00Z"
 }
 ```
 
@@ -45,16 +45,16 @@
 ```json
 {
   "m_42_min51_GOAL_EVT-m_42-1037": {
-    "analyst_view": "GOAL at minute 51! M-11 (Meteor City) scores. Score is now Meteor City 1 - 0 Nova FC.",
+    "analyst_view": "GOAL at minute 51! M-11 scores for Meteor City. Meteor City 1 - 0 Nova FC.",
     "fan_view": "GOOOAAAL! Clinical finish by M-11 for Meteor City!",
     "multiaudience": {
       "en": {
-        "analyst_view": "GOAL at minute 51! M-11 (Meteor City) scores. Score is now Meteor City 1 - 0 Nova FC.",
+        "analyst_view": "GOAL at minute 51! M-11 scores for Meteor City. Meteor City 1 - 0 Nova FC.",
         "fan_view": "GOOOAAAL! Clinical finish by M-11 for Meteor City!"
       },
       "fr": {
-        "analyst_view": "BUT à la 51e minute ! M-11 (Meteor City) marque. Score : Meteor City 1 - 0 Nova FC.",
-        "fan_view": "BUUUT ! Finition décisive de M-11 pour Meteor City !"
+        "analyst_view": "BUT à la 51e minute ! M-11 marque pour Meteor City. Meteor City 1 - 0 Nova FC.",
+        "fan_view": "BUUUT ! Finition clinique signée M-11 pour Meteor City !"
       },
       "club_voices": {
         "Meteor City": "Goal update (1-0): Meteor City strikes at minute 51!",
@@ -80,20 +80,20 @@
     "episode_seq": 1
   },
   "m_42_min57_ENTERED": {
-    "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Collective spacing narrows passing lanes across the pitch.",
-    "fan_view": "High intensity from the pressing unit!",
+    "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Compact pressing wins key central ground, Nova FC forced to rush clearances.",
+    "fan_view": "Pressure's on, Nova FC must break through!",
     "multiaudience": {
       "en": {
-        "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Collective spacing narrows passing lanes across the pitch.",
-        "fan_view": "High intensity from the pressing unit!"
+        "analyst_view": "At minute 57, Meteor City initiates a high press with 8 defensive actions against Nova FC, reducing build-up accuracy to 50%. Compact pressing wins key central ground, Nova FC forced to rush clearances.",
+        "fan_view": "Pressure's on, Nova FC must break through!"
       },
       "fr": {
-        "analyst_view": "À la 57e minute, Meteor City enclenche un pressing haut avec 8 actions défensives dans le tiers défensif de Nova FC, réduisant la précision de relance adverse à 50%. Le bloc collectif resserre les lignes et verrouille la relance courte.",
-        "fan_view": "Quel pressing étouffant de Meteor City ! La relance adverse est bloquée !"
+        "analyst_view": "À la 57e minute, Meteor City enclenche un pressing haut avec 8 actions défensives dans le camp de Nova FC, réduisant la précision de relance adverse à 50%. Le bloc compact obtient le terrain clé central, Nova FC contraint à des dégagements d'urgence.",
+        "fan_view": "La pression est sur, Nova FC doit trouver l'espace."
       },
       "club_voices": {
-        "Meteor City": "Meteor City imposes total territorial control!",
-        "Nova FC": "Nova FC under heavy pressure in their own third!"
+        "Meteor City": "Meteor City dominating territory with a sustained high press!",
+        "Nova FC": "Nova FC forced into hurried clearances under heavy press!"
       }
     },
     "cited_event_ids": [
@@ -111,31 +111,29 @@
       "def_actions": 8,
       "n_passes": 8
     },
-    "rejection_history": [
-      "Format Error: JSONDecodeError"
-    ],
+    "rejection_history": [],
     "is_fallback": false,
     "episode_seq": 2,
     "superseded": false,
-    "llm_latency_sec": 11.69,
+    "llm_latency_sec": 13.21,
     "completed_at_match_minute": 57,
     "render_status": "FINAL (AI Verified)"
   },
   "m_42_min62_EXITED": {
-    "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Collective spacing narrows passing lanes across the pitch.",
-    "fan_view": "High intensity from the pressing unit!",
+    "analyst_view": "At minute 62, Meteor City's high press subsides with 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City's pressing collapses as they transition to mid-game recovery.",
+    "fan_view": "Pressure's off, let's get back to the ball!",
     "multiaudience": {
       "en": {
-        "analyst_view": "At minute 62, Meteor City's high press subsides with only 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Collective spacing narrows passing lanes across the pitch.",
-        "fan_view": "High intensity from the pressing unit!"
+        "analyst_view": "At minute 62, Meteor City's high press subsides with 1 recent defensive action, allowing Nova FC to stabilize possession (57% pass accuracy over the window). Meteor City's pressing collapses as they transition to mid-game recovery.",
+        "fan_view": "Pressure's off, let's get back to the ball!"
       },
       "fr": {
-        "analyst_view": "À la 62e minute, le pressing haut de Meteor City retombe avec seulement 1 action défensive récente, permettant à Nova FC de se réorganiser (précision de passes de 57% sur la période). L'intensité du pressing adverse baisse, permettant de temporiser.",
-        "fan_view": "Le pressing de Meteor City s'essouffle, Nova FC reprend le contrôle du ballon !"
+        "analyst_view": "À la 62e minute, le pressing haut de Meteor City retombe avec 1 action défensive récente, permettant à Nova FC de réorganiser son jeu (précision de relance remontée à 57%). La pression météorienne s'évapore, la relance retrouve son niveau de calme.",
+        "fan_view": "La vapeur s'évape, il faut aller chercher le ballon encore une fois!"
       },
       "club_voices": {
-        "Meteor City": "Meteor City resets the tempo and organizes the midfield!",
-        "Nova FC": "Nova FC stabilizes possession and looks forward!"
+        "Meteor City": "Meteor City regains tactical control as the pressing wave ends.",
+        "Nova FC": "Nova FC manages to find passing lanes and stabilize the tempo."
       }
     },
     "cited_event_ids": [
@@ -153,28 +151,26 @@
       "def_actions": 1,
       "n_passes": 14
     },
-    "rejection_history": [
-      "Format Error: JSONDecodeError"
-    ],
+    "rejection_history": [],
     "is_fallback": false,
     "episode_seq": 3,
     "superseded": false,
-    "llm_latency_sec": 13.04,
+    "llm_latency_sec": 14.19,
     "completed_at_match_minute": 62,
     "render_status": "📡 ON-AIR (Director Approved)",
     "director_decision": "APPROVED_ON_AIR"
   },
   "m_42_min79_GOAL_EVT-m_42-1613": {
-    "analyst_view": "GOAL at minute 79! M-02 (Meteor City) scores. Score is now Meteor City 2 - 0 Nova FC.",
+    "analyst_view": "GOAL at minute 79! M-02 scores for Meteor City. Meteor City 2 - 0 Nova FC.",
     "fan_view": "GOOOAAAL! Clinical finish by M-02 for Meteor City!",
     "multiaudience": {
       "en": {
-        "analyst_view": "GOAL at minute 79! M-02 (Meteor City) scores. Score is now Meteor City 2 - 0 Nova FC.",
+        "analyst_view": "GOAL at minute 79! M-02 scores for Meteor City. Meteor City 2 - 0 Nova FC.",
         "fan_view": "GOOOAAAL! Clinical finish by M-02 for Meteor City!"
       },
       "fr": {
-        "analyst_view": "BUT à la 79e minute ! M-02 (Meteor City) marque. Score : Meteor City 2 - 0 Nova FC.",
-        "fan_view": "BUUUT ! Finition décisive de M-02 pour Meteor City !"
+        "analyst_view": "BUT à la 79e minute ! M-02 marque pour Meteor City. Meteor City 2 - 0 Nova FC.",
+        "fan_view": "BUUUT ! Finition clinique signée M-02 pour Meteor City !"
       },
       "club_voices": {
         "Meteor City": "Goal update (2-0): Meteor City strikes at minute 79!",
@@ -206,7 +202,7 @@
 ```json
 {
   "headline": "Full Time: Meteor City 2 - 0 Nova FC",
-  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). Collective spatial discipline across transition phases dictated the tempo.",
+  "tactical_summary": "Meteor City secures a 2-0 victory over Nova FC. Observed high-press regime spanned minutes 57 to 62 (first confirmed by the causal detector at minute 57). Spatial compactness and intense pressing led to decisive control of tempo.",
   "turning_point": {
     "minute": 57,
     "episode_id": "m_42_min57_ENTERED"

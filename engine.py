@@ -33,6 +33,8 @@ def template_overlay(alarm, episode_key, seq_id, status_label):
 
 
 def append_to_ui(payload):
+    if "timestamp" not in payload or not payload["timestamp"]:
+        payload["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(UI_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -315,20 +317,6 @@ async def match_engine(
         )
         with open(RECAP_FILE, "w", encoding="utf-8") as rf:
             json.dump(recap, rf, indent=2, ensure_ascii=False)
-        
-        # Pousse le récapitulatif dans l'UI avec le statut AI Verified pour corriger le compteur final
-        recap_card = {
-            "analyst_view": recap["headline"],
-            "fan_view": recap["tactical_summary"],
-            "multiaudience": {"en": {"analyst_view": recap["headline"], "fan_view": recap["tactical_summary"]}},
-            "cited_event_ids": recap.get("key_episode_ids", []),
-            "render_status": "FINAL (AI Verified - Recap Agent)",
-            "episode_seq": state_tracker["latest_seq"] + 1,
-            "match_minute": 90,
-            "episode_id": f"{match_id}_min90_FULL_TIME",
-            "is_fallback": not recap.get("recap_verified", False)
-        }
-        append_to_ui(recap_card)
 
         if pending_fabric_tasks:
             await asyncio.gather(*pending_fabric_tasks, return_exceptions=True)

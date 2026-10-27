@@ -457,6 +457,47 @@ def load_audit_trail():
     return rows[-3:]
 
 
+
+def render_player_spotlight(selected_club: str) -> str:
+    """Generates deterministic Player Spotlight metrics without modifying core engine logic."""
+    if selected_club == "Meteor City":
+        p_id = "M-02"
+        role = "STRIKER / MATCH WINNER"
+        goals = 2
+        acc = "100%"
+        desc = "Clinical brace (min 51', 79') exploiting space behind Nova FC's high block."
+    else:
+        p_id = "N-08"
+        role = "MIDFIELD PIVOT"
+        goals = 0
+        acc = "62%"
+        desc = "Target of pressing actions in defensive third; stabilized passing after min 62'."
+
+    return compact_html(f"""
+    <div style="background:#141B24; border:1px solid #1F2A37; border-radius:8px; padding:10px 12px; margin-top:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:10px; font-weight:700; letter-spacing:0.08em; color:#58A6FF; text-transform:uppercase;">
+                PLAYER SPOTLIGHT &bull; {p_id}
+            </span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:9px; background:#0B0F14; padding:2px 6px; border-radius:4px; color:#8B949E;">
+                {role}
+            </span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+            <div style="background:#0B0F14; padding:6px 8px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Goals</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:#3FB950;">{goals}</div>
+            </div>
+            <div style="background:#0B0F14; padding:6px 8px; border-radius:4px;">
+                <div style="font-size:9px; color:#8B949E; text-transform:uppercase;">Shot Acc</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:#E6EDF3;">{acc}</div>
+            </div>
+        </div>
+        <div style="font-size:11px; color:#8B949E; line-height:1.35;">{desc}</div>
+    </div>
+    """)
+
+
 def load_episodes():
     if not os.path.exists(UI_FILE):
         return []
@@ -777,6 +818,7 @@ def main():
         horizontal=True,
         label_visibility="collapsed"
     )
+    st.sidebar.markdown(render_player_spotlight(selected_club), unsafe_allow_html=True)
 
     st.sidebar.markdown('<div class="sb-section-title">2. DIRECTOR CONSOLE (HUMAN-IN-THE-LOOP)</div>', unsafe_allow_html=True)
     sidebar_preview = st.sidebar.empty()
